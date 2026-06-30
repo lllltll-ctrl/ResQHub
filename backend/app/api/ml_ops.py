@@ -222,6 +222,352 @@ def ml_versions() -> dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────
+# P3 Endpoints: time-series, counterfactual, RCA, ensemble, model cards
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/forecast/timeseries/{object_id}")
+def time_series_forecast(
+    object_id: str,
+    horizon_min: int = 240,
+) -> dict[str, Any]:
+    """Prophet-based time-series forecast для battery/CO2/occupancy."""
+    from sqlalchemy import desc, select
+    from app.core.database import SessionLocal
+    from app.models.domain import Telemetry
+    from app.ml.time_series import forecast_object_metrics
+
+    try:
+        oid = uuid.UUID(object_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid object_id")
+
+    db = SessionLocal()
+    try:
+        history = list(
+            db.scalars(
+                select(Telemetry)
+                .where(Telemetry.object_id == oid)
+                .order_by(desc(Telemetry.ts))
+                .limit(500)
+            )
+        )[::-1]
+
+        if len(history) < 5:
+            raise HTTPException(404, "Insufficient history for forecast")
+
+        battery_hist = [(r.ts.timestamp(), r.battery_pct) for r in history]
+        co2_hist = [(r.ts.timestamp(), r.co2_ppm) for r in history]
+        occ_hist = [(r.ts.timestamp(), r.occupancy) for r in history]
+
+        forecast = forecast_object_metrics(
+            object_id=object_id,
+            battery_history=battery_hist,
+            co2_history=co2_hist,
+            occupancy_history=occ_hist,
+            horizon_min=horizon_min,
+        )
+
+        return {
+            "object_id": forecast.object_id,
+            "horizon_min": forecast.horizon_min
+            if hasattr(forecast, "horizon_min")
+            else horizon_min,
+            "generated_at": forecast.generated_at,
+            "warnings": forecast.warnings,
+            "battery": (
+                {
+                    "current": forecast.battery_forecast.current_value,
+                    "predicted": forecast.battery_forecast.predicted_value,
+                    "lower": forecast.battery_forecast.lower_bound,
+                    "upper": forecast.battery_forecast.upper_bound,
+                    "trend": forecast.battery_forecast.trend_direction,
+                    "method": forecast.battery_forecast.method,
+                    "confidence": forecast.battery_forecast.confidence,
+                }
+                if forecast.battery_forecast
+                else None
+            ),
+            "co2": (
+                {
+                    "current": forecast.co2_forecast.current_value,
+                    "predicted": forecast.co2_forecast.predicted_value,
+                    "lower": forecast.co2_forecast.lower_bound,
+                    "upper": forecast.co2_forecast.upper_bound,
+                    "trend": forecast.co2_forecast.trend_direction,
+                    "method": forecast.co2_forecast.method,
+                }
+                if forecast.co2_forecast
+                else None
+            ),
+            "occupancy": (
+                {
+                    "current": forecast.occupancy_forecast.current_value,
+                    "predicted": forecast.occupancy_forecast.predicted_value,
+                    "lower": forecast.occupancy_forecast.lower_bound,
+                    "upper": forecast.occupancy_forecast.upper_bound,
+                    "trend": forecast.occupancy_forecast.trend_direction,
+                    "method": forecast.occupancy_forecast.method,
+                }
+                if forecast.occupancy_forecast
+                else None
+            ),
+        }
+    finally:
+        db.close()
+
+
+class CounterfactualRequest(BaseModel):
+    interventions: list[dict[str, Any]] = Field(
+        ...,
+        description="List of {object_id, intervention_type, eta_min, ...}",
+    )
+
+
+@router.post("/counterfactual")
+def counterfactual_analysis(req: CounterfactualRequest) -> dict[str, Any]:
+    """What-if analysis: симулює ефект interventions перед dispatch."""
+    from sqlalchemy import desc, select
+    from app.core.database import SessionLocal
+    from app.models.domain import Object, Telemetry, Score
+    from app.ml.counterfactual import (
+        InterventionSpec,
+        run_counterfactual,
+    )
+    from app.ml.features import ScoreFeatures
+
+    db = SessionLocal()
+    try:
+        objects_data: list[tuple[str, str, ScoreFeatures]] = []
+        for inv in req.interventions:
+            try:
+                oid = uuid.UUID(inv["object_id"])
+            except (ValueError, KeyError):
+                continue
+            obj = db.get(Object, oid)
+            if obj is None:
+                continue
+            last_t = db.scalars(
+                select(Telemetry)
+                .where(Telemetry.object_id == oid)
+                .order_by(desc(Telemetry.ts))
+                .limit(1)
+            ).first()
+            if last_t is None:
+                continue
+            occ_ratio = (last_t.occupancy / obj.capacity) if obj.capacity > 0 else 0.0
+            features = ScoreFeatures(
+                battery_pct=last_t.battery_pct,
+                battery_est_hours=last_t.battery_est_hours,
+                temp_c=last_t.temp_c,
+                co2_ppm=last_t.co2_ppm,
+                occupancy_ratio=occ_ratio,
+                criticality=obj.criticality,
+                has_generator=obj.has_generator,
+                has_starlink=obj.has_starlink,
+                power_on=last_t.power_on,
+                internet_on=last_t.internet_on,
+                signal=last_t.signal,
+                humidity_pct=last_t.humidity_pct,
+                generator_on=last_t.generator_on,
+            )
+            objects_data.append((str(oid), obj.name, features))
+
+        # Build interventions
+        interventions = []
+        for inv in req.interventions:
+            try:
+                interventions.append(
+                    InterventionSpec(
+                        object_id=inv["object_id"],
+                        intervention_type=inv.get("intervention_type", "generator"),
+                        eta_min=inv.get("eta_min", 30),
+                        effect_battery_pct=inv.get("effect_battery_pct", 100.0),
+                        effect_occupancy_relief=inv.get("effect_occupancy_relief", 0.0),
+                    )
+                )
+            except Exception:
+                continue
+
+        analysis = run_counterfactual(objects_data, interventions)
+        return {
+            "baseline_avg_score": analysis.baseline_avg_score,
+            "post_intervention_avg_score": analysis.post_intervention_avg_score,
+            "score_improvement": analysis.score_improvement,
+            "baseline_critical_count": analysis.baseline_critical_count,
+            "post_intervention_critical_count": analysis.post_intervention_critical_count,
+            "critical_reduction": analysis.critical_reduction,
+            "recommendation": analysis.recommendation,
+            "interventions": [
+                {
+                    "object_id": r.object_id,
+                    "object_name": r.object_name,
+                    "before_score": r.before_score,
+                    "after_score": r.after_score,
+                    "score_delta": r.score_delta,
+                    "before_status": r.before_status,
+                    "after_status": r.after_status,
+                    "will_rescue": r.will_rescue,
+                }
+                for r in analysis.intervention_results
+            ],
+        }
+    finally:
+        db.close()
+
+
+@router.get("/rca/{object_id}")
+def root_cause_analysis(object_id: str) -> dict[str, Any]:
+    """Root-Cause Analysis для останньої аномалії об'єкта."""
+    from app.ml.monitoring.anomaly import get_anomaly_detector
+    from app.ml.monitoring.rca import get_rca
+    from app.ml.monitoring.rca import ANOMALY_HISTORY_PATH
+    import json
+
+    if not ANOMALY_HISTORY_PATH.exists():
+        return {"status": "no_history", "message": "No anomalies recorded yet"}
+
+    # Find most recent anomaly for this object
+    last_anomaly = None
+    with ANOMALY_HISTORY_PATH.open() as f:
+        for line in f:
+            if line.strip():
+                try:
+                    d = json.loads(line)
+                    if d.get("object_id") == object_id:
+                        from app.ml.monitoring.anomaly import AnomalyScore
+
+                        last_anomaly = AnomalyScore(
+                            object_id=d["object_id"],
+                            timestamp=d["timestamp"],
+                            score=d["score"],
+                            is_anomaly=True,
+                            feature_values=d.get("feature_values", {}),
+                        )
+                except Exception:
+                    continue
+
+    if last_anomaly is None:
+        return {"status": "no_anomaly", "message": f"No anomalies for {object_id}"}
+
+    # Compute z-scores
+    feature_values = last_anomaly.feature_values
+    detector = get_anomaly_detector()
+    z_scores: dict[str, float] = {}
+    if detector._feature_means is not None and detector._feature_stds is not None:
+        for name, val in feature_values.items():
+            try:
+                idx = next(
+                    i
+                    for i, n in enumerate(
+                        __import__(
+                            "app.ml.features", fromlist=["FEATURE_NAMES"]
+                        ).FEATURE_NAMES
+                    )
+                    if n == name
+                )
+                z = (val - detector._feature_means[idx]) / detector._feature_stds[idx]
+                z_scores[name] = round(float(z), 2)
+            except Exception:
+                pass
+
+    rca = get_rca()
+    analysis = rca.analyze(last_anomaly, feature_values, z_scores)
+
+    return {
+        "object_id": analysis.object_id,
+        "timestamp": analysis.timestamp,
+        "anomaly_score": analysis.anomaly_score,
+        "primary_cause": analysis.primary_cause,
+        "is_recurring": analysis.is_recurring,
+        "similar_anomalies_last_24h": analysis.similar_anomalies_last_24h,
+        "feature_deviations": analysis.feature_deviations,
+        "root_causes": [
+            {
+                "cause": h.cause,
+                "confidence": h.confidence,
+                "evidence": h.evidence,
+                "recommended_action": h.recommended_action,
+            }
+            for h in analysis.root_causes
+        ],
+        "recommended_action": analysis.recommended_action,
+    }
+
+
+@router.post("/ensemble/train")
+def train_ensemble_endpoint(background: BackgroundTasks) -> dict[str, Any]:
+    """Тренує multi-model ensemble (RF + XGBoost + LightGBM)."""
+    job_id = str(uuid.uuid4())
+
+    def _train() -> None:
+        from app.ml.ensemble import train_ensemble
+
+        try:
+            train_ensemble()
+        except Exception as e:
+            logger.exception("Ensemble training failed: %s", e)
+
+    background.add_task(_train)
+    return {"status": "scheduled", "job_id": job_id}
+
+
+@router.get("/ensemble/predict")
+def ensemble_predict(features: list[float]) -> dict[str, Any]:
+    """Прогноз через ensemble (13 features)."""
+    from app.ml.features import FEATURE_NAMES, ScoreFeatures
+    from app.ml.ensemble import predict_ensemble
+
+    if len(features) != len(FEATURE_NAMES):
+        raise HTTPException(400, f"Expected {len(FEATURE_NAMES)} features")
+
+    feature_dict = dict(zip(FEATURE_NAMES, features))
+    try:
+        sf = ScoreFeatures(**feature_dict)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid features: {e}")
+
+    return predict_ensemble(sf)
+
+
+@router.get("/model-cards")
+def list_model_cards() -> dict[str, Any]:
+    """Список усіх model cards."""
+    from app.ml.model_cards import list_model_cards, get_model_card
+
+    cards = {}
+    for name in list_model_cards():
+        card = get_model_card(name)
+        if card:
+            cards[name] = card.to_dict()
+    return cards
+
+
+@router.get("/model-cards/{model_name}")
+def get_model_card_endpoint(model_name: str) -> dict[str, Any]:
+    """Конкретна model card."""
+    from app.ml.model_cards import get_model_card
+
+    card = get_model_card(model_name)
+    if card is None:
+        raise HTTPException(404, f"Model card not found: {model_name}")
+    return card.to_dict()
+
+
+@router.get("/async/status")
+def async_status() -> dict[str, Any]:
+    """Статус async inference worker."""
+    from app.ml.async_inference import CONFIG, is_async_available
+
+    return {
+        "enabled": CONFIG.enabled,
+        "available": is_async_available(),
+        "redis_url": CONFIG.redis_url,
+        "queue_name": CONFIG.queue_name,
+        "max_jobs": CONFIG.max_jobs,
+        "job_timeout_sec": CONFIG.job_timeout_sec,
+    }
+
+
 @router.post("/ab/start")
 def ab_start(config: ABConfig) -> dict[str, Any]:
     """Запустити A/B тест між двома версіями моделі."""
