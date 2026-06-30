@@ -13,7 +13,12 @@ const statusColor: Record<StatusT, string> = {
   RESCUE_IN_TRANSIT: "#9b59b6",
 };
 
-function makeIcon(status: StatusT): L.DivIcon {
+function isAnomaly(obj: ObjectState): boolean {
+  const comps = obj.score?.components as Record<string, unknown> | undefined;
+  return Boolean(comps?.anomaly_is_anomaly);
+}
+
+function makeIcon(status: StatusT, anomaly: boolean): L.DivIcon {
   const color = statusColor[status];
   const pulseRing = status === "CRITICAL"
     ? `<div style="
@@ -24,11 +29,24 @@ function makeIcon(status: StatusT): L.DivIcon {
         opacity:0.6;
       "></div>`
     : "";
+  const anomalyBadge = anomaly
+    ? `<div style="
+        position:absolute; top:-10px; right:-10px;
+        width:16px; height:16px; border-radius:50%;
+        background: #ffb4ab; color: #411;
+        font-size: 10px; font-weight: 800;
+        display:flex; align-items:center; justify-content:center;
+        box-shadow: 0 0 0 2px #0B1220, 0 0 8px #ffb4ab;
+        animation: pulse-ring 1.5s cubic-bezier(0.4,0,0.6,1) infinite;
+        font-family: monospace;
+      ">!</div>`
+    : "";
   return L.divIcon({
     className: "resq-marker",
     html: `
       <div style="position:relative; width:22px; height:22px;">
         ${pulseRing}
+        ${anomalyBadge}
         <div style="
           width: 22px; height: 22px; border-radius: 50%;
           background: ${color}; border: 2px solid #0B1220;
@@ -69,7 +87,8 @@ export default function CityMapInner({
     () =>
       objects.map((o) => {
         const status = (o.score?.status ?? "STABLE") as StatusT;
-        return { obj: o, status, icon: makeIcon(status) };
+        const anomaly = isAnomaly(o);
+        return { obj: o, status, anomaly, icon: makeIcon(status, anomaly) };
       }),
     [objects],
   );
@@ -83,7 +102,7 @@ export default function CityMapInner({
       style={{ background: "#0B1220" }}
     >
       <TileLayer url={CARTO_DARK} attribution={CARTO_ATTR} />
-      {markers.map(({ obj, status, icon }) => (
+      {markers.map(({ obj, status, anomaly, icon }) => (
         <Marker
           key={obj.id}
           position={[obj.lat, obj.lon]}
@@ -92,7 +111,25 @@ export default function CityMapInner({
         >
           <Popup>
             <div className="text-sm min-w-[180px]">
-              <div className="font-semibold text-base mb-2 border-b border-white/10 pb-2">{obj.name}</div>
+              <div className="font-semibold text-base mb-2 border-b border-white/10 pb-2 flex items-center gap-1">
+                {obj.name}
+                {anomaly && (
+                  <span
+                    title="Виявлено аномалію в reading сенсорів"
+                    style={{
+                      background: "#ffb4ab",
+                      color: "#411",
+                      fontSize: 10,
+                      fontWeight: 800,
+                      padding: "1px 5px",
+                      borderRadius: 4,
+                      marginLeft: 4,
+                    }}
+                  >
+                    ANOMALY
+                  </span>
+                )}
+              </div>
               <div className="text-xs opacity-70 mb-1">{OBJECT_TYPE_UA[obj.type]} · {obj.district}</div>
               <div className="flex items-center gap-1 mb-1">
                 <span style={{color: statusColor[status]}} className="font-bold">{STATUS_LABEL_UA[status]}</span>
@@ -119,8 +156,8 @@ export default function CityMapInner({
               center={[m.obj.lat, m.obj.lon]}
               radius={500}
               pathOptions={{
-                color: statusColor[m.status],
-                fillColor: statusColor[m.status],
+                color: m.anomaly ? "#ffb4ab" : statusColor[m.status],
+                fillColor: m.anomaly ? "#ffb4ab" : statusColor[m.status],
                 fillOpacity: 0.08,
                 weight: 1,
               }}
