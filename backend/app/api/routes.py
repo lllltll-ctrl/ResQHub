@@ -296,6 +296,26 @@ def post_counterfactual(
     return result
 
 
+# ---------- Model Cards & Health (ML Governance) ----------
+@router.get("/models/cards")
+def get_model_cards():
+    """
+    Повертає список model cards для ML governance dashboard.
+    Включає: intended use, training data, features, metrics,
+    limitations, ethical considerations для кожної моделі.
+    """
+    return orchestrator.get_model_cards()
+
+
+@router.get("/models/health")
+def get_model_health():
+    """
+    Повертає health ML pipeline: model versions, online learner state,
+    drift detector state, останні training timestamps.
+    """
+    return orchestrator.get_model_health()
+
+
 # ---------- Public (мешканський UI) ----------
 @public_router.get("/objects", response_model=list[PublicObjectOut])
 def public_objects(

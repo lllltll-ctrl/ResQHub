@@ -62,6 +62,9 @@ export const api = {
       {},
     ),
 
+  modelCards: () => getJson<ModelCard[]>(`/api/models/cards`),
+  modelHealth: () => getJson<ModelHealth>(`/api/models/health`),
+
   telemetry: (object_id: string, limit = 50) =>
     getJson<unknown[]>(`/api/telemetry/${object_id}?limit=${limit}`),
   scores: (object_id: string, limit = 50) => getJson<Score[]>(`/api/scores/${object_id}?limit=${limit}`),

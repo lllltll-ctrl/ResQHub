@@ -285,3 +285,41 @@ export interface Counterfactual {
   top_feature_changes: CounterfactualFeatureChange[];
   recommendation: string;
 }
+
+export interface ModelCard {
+  model_name: string;
+  model_version: string;
+  model_type: string;
+  intended_use: string;
+  training_data: string;
+  features: string[];
+  target: string;
+  metrics: Record<string, number>;
+  limitations: string[];
+  ethical_considerations: string[];
+  created_at: number;
+  updated_at: number;
+  owner: string;
+  contact: string;
+}
+
+export interface ModelHealthArtifact {
+  trained_at?: string;
+  n_samples?: number;
+  metrics?: Record<string, number>;
+}
+
+export interface ModelHealth {
+  models: Record<string, string>;
+  online_learner: {
+    is_loaded: boolean;
+    is_warm: boolean;
+    n_observations: number;
+    n_drifts_detected: number;
+    last_drift_at: number | null;
+    recent_mae: number | null;
+    baseline_mae: number;
+    model_version: string;
+  };
+  artifacts: Record<string, ModelHealthArtifact>;
+}

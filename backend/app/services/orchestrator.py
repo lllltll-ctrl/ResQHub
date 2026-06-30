@@ -12,9 +12,11 @@ P0/P1 refactor:
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -969,6 +971,68 @@ def get_operator_briefing(
         "anomaly_detected": anomaly_is_anomaly,
         "anomaly_score": float(anomaly_score) if anomaly_score is not None else None,
         "drift_detected": drift_detected,
+    }
+
+
+def get_model_cards() -> list[dict]:
+    """
+    Повертає список model cards для governance dashboard.
+
+    Кожна картка містить: model_name, model_version, model_type,
+    intended_use, training_data, features, target, metrics,
+    limitations, ethical_considerations, owner, contact.
+    """
+    from app.ml.model_cards import MODEL_CARDS, list_model_cards
+
+    result: list[dict] = []
+    for name in list_model_cards():
+        card = MODEL_CARDS[name]
+        result.append(card.to_dict())
+    return result
+
+
+def get_model_health() -> dict:
+    """
+    Повертає health ML pipeline:
+    - чи завантажені моделі
+    - online learner state
+    - drift detector state
+    - last training timestamp
+    """
+    from app.ml.inference import model_versions
+    from app.ml.online_learning import get_online_scorer
+
+    online = get_online_scorer()
+    online_health = online.health_check()
+
+    artifacts_dir_status: dict = {}
+    try:
+        meta_path = (
+            Path(__file__).parent / "ml" / "artifacts" / "score_model_1.0.0.meta.json"
+        )
+        if meta_path.exists():
+            meta = json.loads(meta_path.read_text())
+            artifacts_dir_status["score_model"] = {
+                "trained_at": meta.get("trained_at"),
+                "n_samples": meta.get("n_samples"),
+                "metrics": meta.get("metrics", {}),
+            }
+        ranker_path = (
+            Path(__file__).parent / "ml" / "artifacts" / "ranker_model_1.0.0.meta.json"
+        )
+        if ranker_path.exists():
+            meta = json.loads(ranker_path.read_text())
+            artifacts_dir_status["ranker_model"] = {
+                "trained_at": meta.get("trained_at"),
+                "metrics": meta.get("metrics", {}),
+            }
+    except Exception as e:
+        artifacts_dir_status["error"] = str(e)
+
+    return {
+        "models": model_versions(),
+        "online_learner": online_health,
+        "artifacts": artifacts_dir_status,
     }
 
 
