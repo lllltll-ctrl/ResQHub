@@ -1,0 +1,69 @@
+"""
+FastAPI entry point для ResQHub backend.
+
+Запуск:
+    uvicorn app.main:app --reload --port 8000
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.routes import broadcast_event_loop, router
+from app.core.config import settings
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    import asyncio
+
+    task = asyncio.create_task(broadcast_event_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(
+    title="ResQHub API",
+    description="Міська платформа моніторингу енергостійкості критичних об'єктів",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(router)
+
+
+@app.get("/")
+def root():
+    return {
+        "name": "ResQHub",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "endpoints": {
+            "objects": "/api/objects",
+            "telemetry": "/api/telemetry",
+            "scores": "/api/scores/{object_id}",
+            "dashboard": "/api/dashboard",
+            "routing": "/api/routing",
+            "assignments": "/api/assignments",
+            "scenarios": "/api/scenarios",
+            "events": "/api/events",
+            "public": "/api/public/objects",
+            "ws": "/api/ws/stream",
+        },
+    }
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}

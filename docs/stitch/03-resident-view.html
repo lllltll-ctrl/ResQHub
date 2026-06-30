@@ -1,0 +1,377 @@
+<!DOCTYPE html><html class="dark" lang="uk" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Екран Жителя (Public View) - Житомир</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-container": "#461f00",
+                        "on-surface": "#e1e2ec",
+                        "on-secondary-fixed-variant": "#005321",
+                        "secondary-fixed-dim": "#4ae176",
+                        "error": "#ffb4ab",
+                        "on-secondary-container": "#004119",
+                        "background": "#10131a",
+                        "surface-bright": "#363941",
+                        "secondary-container": "#00b954",
+                        "inverse-primary": "#005ac2",
+                        "primary": "#adc6ff",
+                        "inverse-on-surface": "#2e3038",
+                        "on-error-container": "#ffdad6",
+                        "surface-container-highest": "#32353c",
+                        "on-primary-container": "#00285d",
+                        "tertiary-fixed-dim": "#ffb786",
+                        "on-tertiary-fixed": "#311400",
+                        "on-primary": "#002e6a",
+                        "tertiary-fixed": "#ffdcc6",
+                        "surface-variant": "#32353c",
+                        "surface-container-lowest": "#0b0e15",
+                        "surface": "#10131a",
+                        "on-secondary": "#003915",
+                        "surface-container": "#1d2027",
+                        "outline-variant": "#424754",
+                        "surface-container-high": "#272a31",
+                        "secondary": "#4ae176",
+                        "tertiary": "#ffb786",
+                        "error-container": "#93000a",
+                        "inverse-surface": "#e1e2ec",
+                        "primary-fixed-dim": "#adc6ff",
+                        "primary-container": "#4d8eff",
+                        "on-surface-variant": "#c2c6d6",
+                        "on-background": "#e1e2ec",
+                        "on-secondary-fixed": "#002109",
+                        "on-primary-fixed-variant": "#004395",
+                        "on-tertiary-fixed-variant": "#723600",
+                        "on-tertiary": "#502400",
+                        "tertiary-container": "#df7412",
+                        "on-primary-fixed": "#001a42",
+                        "outline": "#8c909f",
+                        "primary-fixed": "#d8e2ff",
+                        "surface-container-low": "#191b23",
+                        "on-error": "#690005",
+                        "surface-tint": "#adc6ff",
+                        "surface-dim": "#10131a",
+                        "secondary-fixed": "#6bff8f"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "component-gap": "12px",
+                        "container-padding": "24px",
+                        "unit": "4px",
+                        "gutter": "16px",
+                        "mobile-margin": "16px",
+                        "desktop-margin": "32px"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["DM Sans"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["DM Sans"],
+                        "data-lg": ["JetBrains Mono"],
+                        "body-sm": ["Inter"],
+                        "display-lg": ["DM Sans"],
+                        "label-caps": ["Inter"],
+                        "data-md": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "500" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+                        "data-lg": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "data-md": ["14px", { "lineHeight": "20px", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .glass-panel {
+            background-color: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .glow-effect {
+            box-shadow: 0 0 15px -3px rgba(173, 198, 255, 0.3);
+        }
+        .glow-effect-success {
+            box-shadow: 0 0 15px -3px rgba(74, 225, 118, 0.3);
+        }
+        .map-container {
+            position: relative;
+            overflow: hidden;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .pulse-dot {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(74, 225, 118, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(74, 225, 118, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(74, 225, 118, 0); }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md min-h-screen flex flex-col">
+<!-- TopNavBar -->
+<nav class="fixed top-0 w-full z-50 bg-surface/80 dark:bg-surface/80 backdrop-blur-xl border-b border-white/10 shadow-sm flex justify-between items-center h-16 px-desktop-margin max-w-full mx-auto">
+<div class="flex items-center gap-container-padding">
+<span class="font-headline-lg text-headline-lg font-bold text-primary dark:text-primary tracking-tight">CityResilience</span>
+<div class="hidden md:flex gap-gutter items-center">
+<a class="text-on-surface-variant font-medium hover:text-on-surface transition-colors" href="#">Map</a>
+<a class="text-on-surface-variant font-medium hover:text-on-surface transition-colors" href="#">Status</a>
+<a class="text-primary border-b-2 border-primary font-bold pb-1" href="#">Help</a>
+</div>
+</div>
+<div class="flex items-center gap-gutter">
+<button class="hover:bg-surface-container-high/50 rounded-lg transition-all p-2 active:scale-95 duration-150">
+<span class="material-symbols-outlined text-primary dark:text-primary">notifications</span>
+</button>
+<button class="hover:bg-surface-container-high/50 rounded-lg transition-all p-2 active:scale-95 duration-150">
+<span class="material-symbols-outlined text-primary dark:text-primary">account_circle</span>
+</button>
+<img alt="User profile" class="w-8 h-8 rounded-full object-cover hidden" data-alt="A small circular avatar image representing a generic user profile. The style is modern, minimalistic, and fits a dark mode command center aesthetic. Soft lighting, high contrast." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD0tR5JiTB-1PA2p-6OPiAneaQBJibiTWZq3NSSC6l5G0BB7DsNk7nKwfiTd8Xe_fbEJggsDsIejmBetL1d-c8gBwVTtuEc8ttdgSPDfkd3B5X4EYmIJzJRhW4RWPI9wC2JuhJBiqVJ6z0eedJWq3jdiZg0aCzuiT57NPEiJQRO_rTmzVjzmVu0yBDDew1Q0QyKKU28A3XxA8ZMT4-uqbsCjhnnF2PgqjJMVD9fb5hcmWTrqNoKFPlY_AWFf1t4E9SsBm514RAkE8d9">
+</div>
+</nav>
+<!-- SideNavBar (Hidden on Mobile, Visible on md+) -->
+<aside class="fixed left-0 top-0 h-full w-[240px] z-40 bg-surface-container dark:bg-surface-container border-r border-white/5 shadow-xl hidden md:flex flex-col py-6 gap-component-gap pt-24">
+<div class="px-container-padding mb-6">
+<img alt="City Resilience Logo" class="w-12 h-12 rounded-lg mb-4 object-cover" data-alt="A sleek, futuristic emblem or logo for a city resilience hub. It features geometric shapes implying stability and networking, rendered in deep blues and glowing neon green accents against a dark slate background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCyp_cI5EiBR89dYCsUybt4ZYQAOAuAaBXTqo7UFnoal-pyKFnr2T9x7zpJygeJvSGOhClB4TnIjfeOn6BNu6i95PLkFa14zOeTbdrlt7PLGIVmK-Jr0oVzD91rGCckPr9IrCIZvYXXwmLTiq294bWpsZPU-0tJgn_D2R4YBPSipCCgKw7nTkJfIfyzN2Xaw4-AH0N7N9KsrC5X1C41ol-TMBbN0voI2x55YBI7lFCb2qtDBkpP2m7cydhCMIZMtZF24chz-STt3Hmd">
+<h2 class="font-headline-sm text-headline-sm font-bold text-on-surface">Resilience Hub</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Citizen Portal</p>
+</div>
+<div class="flex flex-col gap-unit flex-1">
+<div class="flex items-center gap-3 py-3 px-4 mx-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors rounded-xl cursor-pointer active:scale-98">
+<span class="material-symbols-outlined text-secondary dark:text-secondary">home</span>
+<span class="font-label-caps text-label-caps">Home</span>
+</div>
+<div class="flex items-center gap-3 py-3 px-4 mx-2 bg-secondary-container text-on-secondary-container rounded-xl cursor-pointer active:scale-98">
+<span class="material-symbols-outlined text-secondary dark:text-secondary">map</span>
+<span class="font-label-caps text-label-caps">Map</span>
+</div>
+<div class="flex items-center gap-3 py-3 px-4 mx-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors rounded-xl cursor-pointer active:scale-98">
+<span class="material-symbols-outlined text-secondary dark:text-secondary">location_city</span>
+<span class="font-label-caps text-label-caps">Districts</span>
+</div>
+<div class="flex items-center gap-3 py-3 px-4 mx-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors rounded-xl cursor-pointer active:scale-98">
+<span class="material-symbols-outlined text-secondary dark:text-secondary">help_outline</span>
+<span class="font-label-caps text-label-caps">Help</span>
+</div>
+</div>
+<div class="px-container-padding mt-auto">
+<button class="w-full bg-primary text-on-primary font-label-caps text-label-caps py-3 rounded-lg hover:bg-primary-container hover:text-on-primary-container transition-colors active:scale-95">Find Nearest Help</button>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 pt-24 pb-8 px-mobile-margin md:px-desktop-margin md:ml-[240px] flex flex-col gap-container-padding">
+<!-- Header Section -->
+<header class="flex flex-col md:flex-row justify-between items-start md:items-center gap-gutter">
+<div>
+<h1 class="font-display-lg text-display-lg text-on-surface">Центр Стійкості Міста: Житомир</h1>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2 max-w-2xl">Оперативна інформація про доступність критичної інфраструктури та пунктів допомоги.</p>
+</div>
+<button class="bg-primary text-on-primary px-6 py-3 rounded-lg font-headline-sm text-headline-sm glow-effect hover:bg-primary-container hover:text-on-primary-container transition-colors active:scale-95 flex items-center gap-2">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">near_me</span>
+                Знайти найближчу допомогу
+            </button>
+</header>
+<!-- Main Dashboard Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-container-padding">
+<!-- Map Area (Center/Left) -->
+<div class="lg:col-span-8 flex flex-col gap-component-gap">
+<!-- Filters -->
+<div class="flex flex-wrap gap-component-gap">
+<button class="flex items-center gap-2 px-4 py-2 bg-surface-container-high rounded-full border border-white/10 hover:bg-surface-container-highest transition-colors text-on-surface font-label-caps text-label-caps">
+<span class="material-symbols-outlined text-primary text-sm">bolt</span> Світло
+                    </button>
+<button class="flex items-center gap-2 px-4 py-2 bg-primary-container text-on-primary-container rounded-full border border-primary/30 glow-effect font-label-caps text-label-caps">
+<span class="material-symbols-outlined text-sm">wifi</span> Зв'язок
+                    </button>
+<button class="flex items-center gap-2 px-4 py-2 bg-surface-container-high rounded-full border border-white/10 hover:bg-surface-container-highest transition-colors text-on-surface font-label-caps text-label-caps">
+<span class="material-symbols-outlined text-primary text-sm">water_drop</span> Вода
+                    </button>
+<button class="flex items-center gap-2 px-4 py-2 bg-surface-container-high rounded-full border border-white/10 hover:bg-surface-container-highest transition-colors text-on-surface font-label-caps text-label-caps">
+<span class="material-symbols-outlined text-primary text-sm">thermostat</span> Обігрів
+                    </button>
+</div>
+<!-- Map Container -->
+<div class="map-container flex-1 min-h-[400px] lg:min-h-[500px] relative glass-panel">
+<div class="absolute inset-0 bg-cover bg-center w-full h-full opacity-60" data-alt="A highly detailed, stylized dark mode map of Zhytomyr, Ukraine. The aesthetic is cyber-telemetry, featuring deep graphite and navy blue tones for landmasses, with glowing neon outlines for major roads and rivers. Scattered bright green and blue pulsing dots indicate active support hubs. Professional, high-contrast, technical UI style." data-location="Zhytomyr" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuB5L6PIXmISTuYfbDPngouuhf3J4ltib-vYGNOZkLTNLvJXvymifL27bfg51rciNko89si1b5VdSNX_sruuP2DcB4Yaji_dbmv8rCr_x74VFp77lR2Hr29UcohkFZiPV-ig2FVuYNpDk3dn1tyNjVzHktSt5DwRo3f7jl_CDB0Eq03PdMoNOAiAhy3EaX0aFMl5jAn0-17TrlcmhLbCCCLdaCfiHJIRZ8v03Ea7EBUWdIx89_al71VjsdgACt5xoquEpXtgWxEoiR32')"></div>
+<!-- Map Overlays / Pointers -->
+<div class="absolute top-1/4 left-1/3 flex flex-col items-center">
+<div class="w-4 h-4 bg-secondary rounded-full pulse-dot glow-effect-success"></div>
+</div>
+<div class="absolute top-1/2 left-1/2 flex flex-col items-center">
+<div class="w-4 h-4 bg-secondary rounded-full pulse-dot glow-effect-success"></div>
+</div>
+<div class="absolute bottom-1/3 right-1/4 flex flex-col items-center">
+<div class="w-4 h-4 bg-secondary rounded-full pulse-dot glow-effect-success"></div>
+</div>
+</div>
+</div>
+<!-- Right Panel -->
+<div class="lg:col-span-4 flex flex-col gap-container-padding">
+<!-- Nearest Point Card -->
+<div class="glass-panel rounded-xl p-container-padding glow-effect">
+<div class="flex items-start justify-between mb-4">
+<div>
+<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-1 uppercase">Найближчий пункт до вас</h3>
+<div class="font-headline-sm text-headline-sm text-on-surface font-bold">Школа №5</div>
+<div class="font-body-sm text-body-sm text-outline mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">directions_walk</span> 4 хв пішки
+                            </div>
+</div>
+<div class="bg-secondary/20 text-secondary px-3 py-1 rounded-full font-label-caps text-label-caps border border-secondary/30">
+                            Є МІСЦЯ
+                        </div>
+</div>
+<div class="space-y-3 mt-6 border-t border-white/5 pt-4">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-primary">bolt</span>
+<span class="font-body-md text-body-md">Світло</span>
+</div>
+<span class="font-data-md text-data-md text-secondary">ON</span>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-primary">wifi</span>
+<span class="font-body-md text-body-md">Starlink</span>
+</div>
+<span class="font-data-md text-data-md text-secondary">ON</span>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-primary">water_drop</span>
+<span class="font-body-md text-body-md">Вода</span>
+</div>
+<span class="font-data-md text-data-md text-secondary">ON</span>
+</div>
+</div>
+<button class="w-full bg-primary text-on-primary font-headline-sm text-headline-sm py-3 rounded-lg glow-effect hover:bg-primary-container hover:text-on-primary-container transition-colors active:scale-95 flex items-center justify-center gap-2 mt-6">
+    <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">directions</span>
+    Маршрут
+</button><button class="w-full mt-2 bg-surface-container-highest text-on-surface font-headline-sm text-headline-sm py-3 rounded-lg hover:bg-surface-container-high/50 transition-colors active:scale-95 flex items-center justify-center gap-2 border border-white/10"><span class="material-symbols-outlined">share</span>Поділитися</button><button class="w-full mt-2 bg-surface-container-highest text-on-surface font-headline-sm text-headline-sm py-3 rounded-lg hover:bg-surface-container-high/50 transition-colors active:scale-95 flex items-center justify-center gap-2 border border-white/10"><span class="material-symbols-outlined">content_copy</span>Копіювати посилання</button>
+</div>
+<!-- District Status List -->
+<div class="glass-panel rounded-xl p-container-padding flex-1">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-6 uppercase">Стан по районах</h3><button class="w-full mb-6 bg-surface-container-highest text-on-surface font-label-caps text-label-caps py-3 rounded-lg hover:bg-surface-container-high/50 transition-colors active:scale-95 flex items-center justify-center gap-2 border border-white/10">
+    <span class="material-symbols-outlined text-sm">content_copy</span>
+    Скопіювати звіт по місту
+</button>
+<div class="space-y-6">
+<!-- Boguniya -->
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="font-headline-sm text-headline-sm text-on-surface">Богунія</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 rounded-lg active:scale-95" title="Копіювати стан">
+    <span class="material-symbols-outlined text-sm">content_copy</span>
+</button></div>
+<div class="grid grid-cols-2 gap-4">
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-outline">Електрика</span>
+<span class="text-secondary font-data-md">85%</span>
+</div>
+<div class="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-[85%] rounded-full glow-effect-success"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-outline">Вода</span>
+<span class="text-primary font-data-md">90%</span>
+</div>
+<div class="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-[90%] rounded-full glow-effect"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Center -->
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="font-headline-sm text-headline-sm text-on-surface">Центр</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 rounded-lg active:scale-95" title="Копіювати стан">
+    <span class="material-symbols-outlined text-sm">content_copy</span>
+</button></div>
+<div class="grid grid-cols-2 gap-4">
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-outline">Електрика</span>
+<span class="text-tertiary-container font-data-md">45%</span>
+</div>
+<div class="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-tertiary-container w-[45%] rounded-full"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-outline">Вода</span>
+<span class="text-primary font-data-md">100%</span>
+</div>
+<div class="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-primary w-full rounded-full glow-effect"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Kroshnya -->
+<div>
+<div class="flex justify-between items-center mb-2">
+<span class="font-headline-sm text-headline-sm text-on-surface">Крошня</span>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-1 rounded-lg active:scale-95" title="Копіювати стан">
+    <span class="material-symbols-outlined text-sm">content_copy</span>
+</button></div>
+<div class="grid grid-cols-2 gap-4">
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-outline">Електрика</span>
+<span class="text-error font-data-md">15%</span>
+</div>
+<div class="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-error w-[15%] rounded-full"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between text-xs mb-1">
+<span class="text-outline">Вода</span>
+<span class="text-tertiary-container font-data-md">30%</span>
+</div>
+<div class="h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="h-full bg-tertiary-container w-[30%] rounded-full"></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="w-full relative bottom-0 bg-surface-container-lowest dark:bg-surface-container-lowest border-t border-outline-variant/20 flex flex-col md:flex-row justify-between items-center p-container-padding gap-gutter md:ml-[240px]">
+<div class="font-label-caps text-label-caps text-on-surface-variant">© 2024 City Operational Command. All rights reserved.</div>
+<div class="flex gap-gutter">
+<a class="text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm hover:text-primary transition-colors transition-opacity duration-200" href="#">Privacy Policy</a>
+<a class="text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm hover:text-primary transition-colors transition-opacity duration-200" href="#">Contact Support</a>
+<a class="text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm hover:text-primary transition-colors transition-opacity duration-200" href="#">Emergency Protocol</a>
+</div>
+</footer>
+
+
+</body></html>

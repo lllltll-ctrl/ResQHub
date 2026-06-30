@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="uk"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ResQGrid - Analytics</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&amp;family=Inter:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error-container": "#ffdad6",
+                        "primary-fixed-dim": "#adc6ff",
+                        "tertiary-fixed-dim": "#ffb786",
+                        "on-primary-fixed-variant": "#004395",
+                        "on-surface-variant": "#c2c6d6",
+                        "inverse-surface": "#e1e2ec",
+                        "on-tertiary": "#502400",
+                        "on-secondary-fixed": "#002109",
+                        "surface-variant": "#32353c",
+                        "on-error": "#690005",
+                        "surface-container-high": "#272a31",
+                        "secondary": "#4ae176",
+                        "background": "#10131a",
+                        "surface-tint": "#adc6ff",
+                        "tertiary": "#ffb786",
+                        "surface": "#10131a",
+                        "surface-container": "#1d2027",
+                        "secondary-container": "#00b954",
+                        "on-tertiary-fixed-variant": "#723600",
+                        "primary-fixed": "#d8e2ff",
+                        "error": "#ffb4ab",
+                        "surface-bright": "#363941",
+                        "secondary-fixed": "#6bff8f",
+                        "primary-container": "#4d8eff",
+                        "inverse-on-surface": "#2e3038",
+                        "on-secondary": "#003915",
+                        "on-background": "#e1e2ec",
+                        "inverse-primary": "#005ac2",
+                        "tertiary-fixed": "#ffdcc6",
+                        "primary": "#adc6ff",
+                        "on-tertiary-fixed": "#311400",
+                        "outline": "#8c909f",
+                        "tertiary-container": "#df7412",
+                        "on-secondary-container": "#004119",
+                        "on-primary-container": "#00285d",
+                        "surface-container-highest": "#32353c",
+                        "surface-container-low": "#191b23",
+                        "on-secondary-fixed-variant": "#005321",
+                        "on-primary": "#002e6a",
+                        "outline-variant": "#424754",
+                        "on-surface": "#e1e2ec",
+                        "surface-container-lowest": "#0b0e15",
+                        "secondary-fixed-dim": "#4ae176",
+                        "on-tertiary-container": "#461f00",
+                        "surface-dim": "#10131a",
+                        "error-container": "#93000a",
+                        "on-primary-fixed": "#001a42"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "gutter": "16px",
+                        "container-padding": "24px",
+                        "desktop-margin": "32px",
+                        "component-gap": "12px",
+                        "unit": "4px",
+                        "mobile-margin": "16px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["DM Sans"],
+                        "data-md": ["JetBrains Mono"],
+                        "body-md": ["Inter"],
+                        "headline-sm": ["DM Sans"],
+                        "headline-lg": ["DM Sans"],
+                        "body-sm": ["Inter"],
+                        "label-caps": ["Inter"],
+                        "data-lg": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "data-md": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "500" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "data-lg": ["24px", { "lineHeight": "32px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #0B1220; color: #e1e2ec; }
+        .glass-card {
+            background-color: #111827;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(12px);
+        }
+        .glow-blue { box-shadow: 0 0 15px -3px #4d8eff; }
+        .glow-red { box-shadow: 0 0 15px -3px #ffb4ab; }
+        .glow-green { box-shadow: 0 0 15px -3px #4ae176; }
+        
+        /* Grid background pattern */
+        .bg-grid {
+            background-image: linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen bg-grid flex flex-col md:flex-row overflow-x-hidden">
+<!-- TopNavBar (Mobile Only) -->
+<nav class="md:hidden bg-surface-dim/80 backdrop-blur-xl border-b border-outline-variant/20 shadow-sm fixed top-0 w-full z-50 flex justify-between items-center h-16 px-gutter">
+<div class="flex items-center gap-2">
+<span class="font-display-lg text-headline-sm font-bold tracking-tight text-primary">ResQGrid</span>
+</div>
+<div class="flex items-center gap-4 text-primary">
+<span class="font-body-md text-body-md">Zhytomyr</span>
+<span class="material-symbols-outlined hover:bg-surface-bright/10 transition-colors p-1 rounded-full cursor-pointer">search</span>
+<span class="material-symbols-outlined hover:bg-surface-bright/10 transition-colors p-1 rounded-full cursor-pointer">notifications</span>
+<span class="material-symbols-outlined hover:bg-surface-bright/10 transition-colors p-1 rounded-full cursor-pointer">settings</span>
+<div class="w-8 h-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/20">
+<img alt="Administrator Profile" class="w-full h-full object-cover" data-alt="Administrator Profile avatar, close up of professional face, high contrast dark tech lighting, 8k resolution, photorealistic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCfvwJeyfaEJfjB_YjN9yaHGn_AY-xQOF1pZEueP1ehIV0GgokjqC_wQd7YVyG27oVvOoY1yqB10je1GO-66Jbm0uUm1V0DBJLmTLcJukzaPdVibSj-f2ZNPsZt_0UHM3LkxBStn9jjZpnLrjzig4uu6hHVTBA_gq3gkViFIDwrzrp8aHBMtAYaFqFj91FvpHMSDEHk-h09FNO4tUd7MSA7DI_Jj2twKiPUo_f2HR0PiohaxXunZInWdLLzV4uy5fgI0vIIgM7nUGf0"/>
+</div>
+</div>
+</nav>
+<!-- SideNavBar (Desktop) -->
+<aside class="hidden md:flex flex-col py-mobile-margin bg-surface-container border-r border-outline-variant/20 fixed left-0 top-0 h-screen w-64 z-40 transition-all duration-200 ease-in-out">
+<div class="px-6 mb-8 mt-4 flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-variant overflow-hidden border border-outline-variant/20">
+<img alt="City Admin" class="w-full h-full object-cover" data-alt="City Admin avatar, close up of professional face, high contrast dark tech lighting, 8k resolution, photorealistic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC47B_mbJzDWFpefBa2SSml-o4lffYIbPAMCWIbAfXMjtdT9xnKU661NArq0AYOr1frMuNvQuVDbV4v3QANwVfqTuSAGlyvl0PxiT7hlKIY5iByN9S_uyyCWHM5ErhEsLq4JumyAiv0IC9kwcHoEqxXuS33tCjciV-8PnVlTwRKKJiUbWEAQdltBl_KLKvmhQ4JJNbCTKmZe0zjRnUIqvfWUIwlcPqUHN6i5viY2-BRFrpKFexS7yMck4wUmBt41YSx8TLdmL5l01DB"/>
+</div>
+<div>
+<h1 class="font-display-lg text-headline-sm text-primary tracking-tight">Zhytomyr Hub</h1>
+<p class="font-label-caps text-label-caps text-on-surface-variant opacity-70">Operational Center</p>
+</div>
+</div>
+<nav class="flex-1 flex flex-col gap-2">
+<a class="flex items-center gap-3 px-6 py-3 text-on-surface-variant hover:bg-surface-variant/30 transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Operations
+            </a>
+<a class="flex items-center gap-3 px-6 py-3 text-primary bg-primary-container/10 border-r-4 border-primary transition-colors font-label-caps text-label-caps glow-blue" href="#">
+<span class="material-symbols-outlined">analytics</span>
+                Analytics
+            </a>
+<a class="flex items-center gap-3 px-6 py-3 text-on-surface-variant hover:bg-surface-variant/30 transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">construction</span>
+                Infrastructure
+            </a>
+</nav>
+<div class="mt-auto flex flex-col gap-2">
+<a class="flex items-center gap-3 px-6 py-3 text-on-surface-variant hover:bg-surface-variant/30 transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">help</span>
+                Support
+            </a>
+<a class="flex items-center gap-3 px-6 py-3 text-error hover:bg-error/10 transition-colors font-label-caps text-label-caps" href="#">
+<span class="material-symbols-outlined">logout</span>
+                Log Out
+            </a>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="flex-1 md:ml-64 pt-20 md:pt-8 p-container-padding lg:p-desktop-margin overflow-y-auto">
+<!-- Header -->
+<header class="mb-8 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Аналітика та тренди міської стійкості</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2 max-w-2xl">Real-time telemetry and predictive models for Zhytomyr infrastructure.</p>
+</div>
+<div class="flex gap-3">
+<button class="px-4 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant font-body-sm text-body-sm hover:bg-surface-bright/20 transition flex items-center gap-2 glass-card">
+<span class="material-symbols-outlined text-[18px]">calendar_today</span>
+                    Last 7 Days
+                </button>
+<button class="px-4 py-2 rounded-lg bg-primary-container/10 border border-primary text-primary font-body-sm text-body-sm hover:bg-primary-container/20 transition flex items-center gap-2 glow-blue">
+<span class="material-symbols-outlined text-[18px]">download</span>
+                    Export Report
+                </button>
+</div>
+</header>
+<!-- Row 1: KPIs -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+<!-- KPI 1 -->
+<div class="glass-card rounded-xl p-container-padding relative overflow-hidden group hover:border-primary/50 transition-colors">
+<div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl -mr-10 -mt-10"></div>
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider">Average Resilience Index</h3>
+<span class="material-symbols-outlined text-primary">security</span>
+</div>
+<div class="flex items-end gap-4">
+<span class="font-data-lg text-[40px] leading-none text-on-surface font-bold">72</span>
+<div class="flex items-center text-error bg-error/10 px-2 py-1 rounded text-xs font-data-md glow-red">
+<span class="material-symbols-outlined text-[14px]">trending_down</span>
+                        -2%
+                    </div>
+</div>
+</div>
+<!-- KPI 2 -->
+<div class="glass-card rounded-xl p-container-padding relative overflow-hidden group hover:border-secondary/50 transition-colors">
+<div class="absolute top-0 right-0 w-32 h-32 bg-secondary/5 rounded-full blur-2xl -mr-10 -mt-10"></div>
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider">Network Availability</h3>
+<span class="material-symbols-outlined text-secondary">wifi_tethering</span>
+</div>
+<div class="flex items-end gap-4">
+<span class="font-data-lg text-[40px] leading-none text-on-surface font-bold">94.2<span class="text-xl text-on-surface-variant">%</span></span>
+<div class="flex items-center text-secondary bg-secondary/10 px-2 py-1 rounded text-xs font-data-md glow-green">
+<span class="material-symbols-outlined text-[14px]">horizontal_rule</span>
+                        Stable
+                    </div>
+</div>
+</div>
+<!-- KPI 3 -->
+<div class="glass-card rounded-xl p-container-padding relative overflow-hidden group hover:border-error/50 transition-colors">
+<div class="absolute top-0 right-0 w-32 h-32 bg-error/5 rounded-full blur-2xl -mr-10 -mt-10"></div>
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider">Critical Incidents (24h)</h3>
+<span class="material-symbols-outlined text-error">warning</span>
+</div>
+<div class="flex items-end gap-4">
+<span class="font-data-lg text-[40px] leading-none text-on-surface font-bold">18</span>
+<div class="flex items-center text-on-surface-variant bg-surface-bright/20 px-2 py-1 rounded text-xs font-data-md">
+                        +3 vs Avg
+                    </div>
+</div>
+</div>
+</div>
+<!-- Row 2: Main Chart -->
+<div class="glass-card rounded-xl p-container-padding mb-8">
+<div class="flex justify-between items-center mb-6 border-b border-outline-variant/20 pb-4">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary">timeline</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Динаміка Resilience Index</h3>
+</div>
+<div class="flex gap-2">
+<span class="px-2 py-1 rounded bg-primary/20 text-primary font-data-md text-xs border border-primary/30">North</span>
+<span class="px-2 py-1 rounded bg-tertiary/20 text-tertiary font-data-md text-xs border border-tertiary/30">Center</span>
+<span class="px-2 py-1 rounded bg-secondary/20 text-secondary font-data-md text-xs border border-secondary/30">South</span>
+</div>
+</div>
+<!-- Faux Chart Area -->
+<div class="h-64 w-full relative bg-surface-dim/30 rounded-lg border border-outline-variant/10 overflow-hidden flex items-end">
+<!-- Grid Lines -->
+<div class="absolute inset-0 flex flex-col justify-between py-4 pointer-events-none opacity-20">
+<div class="border-b border-outline-variant/50 w-full"></div>
+<div class="border-b border-outline-variant/50 w-full"></div>
+<div class="border-b border-outline-variant/50 w-full"></div>
+<div class="border-b border-outline-variant/50 w-full"></div>
+<div class="border-b border-outline-variant/50 w-full"></div>
+</div>
+<!-- Mock SVG Lines (Indigo/Blue/Green) -->
+<svg class="w-full h-full absolute bottom-0 left-0" preserveaspectratio="none" viewbox="0 0 100 100">
+<!-- Center (Blue) -->
+<path d="M0,80 Q10,75 20,85 T40,60 T60,70 T80,50 T100,40" fill="none" stroke="#4d8eff" stroke-width="1.5" style="filter: drop-shadow(0 0 4px #4d8eff);"></path>
+<!-- North (Amber/Tertiary) -->
+<path d="M0,60 Q15,65 30,55 T50,75 T70,45 T90,55 T100,45" fill="none" stroke="#df7412" stroke-dasharray="2,2" stroke-width="1.5"></path>
+<!-- South (Green) -->
+<path d="M0,90 Q20,85 40,90 T60,80 T80,85 T100,75" fill="none" stroke="#4ae176" stroke-width="1.5" style="filter: drop-shadow(0 0 4px #4ae176);"></path>
+</svg>
+</div>
+</div>
+<!-- Row 3: Split -->
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
+<!-- Left (60%) -->
+<div class="glass-card rounded-xl p-container-padding lg:col-span-3">
+<div class="flex items-center gap-3 mb-6 border-b border-outline-variant/20 pb-4">
+<span class="material-symbols-outlined text-secondary">power</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Доступність критичних мереж</h3>
+</div>
+<div class="space-y-4">
+<!-- Progress Bar Item -->
+<div>
+<div class="flex justify-between font-data-md text-sm mb-1">
+<span class="text-on-surface-variant">Electricity</span>
+<span class="text-secondary">98%</span>
+</div>
+<div class="w-full bg-surface-bright/30 rounded-full h-2 overflow-hidden">
+<div class="bg-secondary h-2 rounded-full glow-green" style="width: 98%"></div>
+</div>
+</div>
+<!-- Progress Bar Item -->
+<div>
+<div class="flex justify-between font-data-md text-sm mb-1">
+<span class="text-on-surface-variant">Water</span>
+<span class="text-tertiary">85%</span>
+</div>
+<div class="w-full bg-surface-bright/30 rounded-full h-2 overflow-hidden">
+<div class="bg-tertiary h-2 rounded-full" style="width: 85%"></div>
+</div>
+</div>
+<!-- Progress Bar Item -->
+<div>
+<div class="flex justify-between font-data-md text-sm mb-1">
+<span class="text-on-surface-variant">Connectivity</span>
+<span class="text-primary">99%</span>
+</div>
+<div class="w-full bg-surface-bright/30 rounded-full h-2 overflow-hidden">
+<div class="bg-primary h-2 rounded-full glow-blue" style="width: 99%"></div>
+</div>
+</div>
+<!-- Progress Bar Item -->
+<div>
+<div class="flex justify-between font-data-md text-sm mb-1">
+<span class="text-on-surface-variant">Gas</span>
+<span class="text-error">65%</span>
+</div>
+<div class="w-full bg-surface-bright/30 rounded-full h-2 overflow-hidden">
+<div class="bg-error h-2 rounded-full glow-red" style="width: 65%"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right (40%) -->
+<div class="glass-card rounded-xl p-container-padding lg:col-span-2 flex flex-col">
+<div class="flex items-center gap-3 mb-6 border-b border-outline-variant/20 pb-4">
+<span class="material-symbols-outlined text-tertiary">pie_chart</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Розподіл інцидентів</h3>
+</div>
+<!-- Faux Donut Chart -->
+<div class="flex-1 flex items-center justify-center relative min-h-[150px]">
+<div class="w-32 h-32 rounded-full border-[16px] border-surface-bright/20 relative">
+<!-- Segments simulated with conic-gradient -->
+<div class="absolute inset-[-16px] rounded-full opacity-80" style="background: conic-gradient(#4d8eff 0% 40%, #df7412 40% 65%, #ffb4ab 65% 85%, #4ae176 85% 100%); mask: radial-gradient(transparent 55%, black 56%); -webkit-mask: radial-gradient(transparent 55%, black 56%);">
+</div>
+<!-- Inner Circle -->
+<div class="absolute inset-0 flex items-center justify-center flex-col">
+<span class="font-data-lg text-xl font-bold text-on-surface">18</span>
+<span class="font-label-caps text-[10px] text-on-surface-variant">Total</span>
+</div>
+</div>
+</div>
+<!-- Legend -->
+<div class="grid grid-cols-2 gap-2 mt-4">
+<div class="flex items-center gap-2 font-data-md text-xs"><div class="w-3 h-3 rounded-sm bg-primary"></div> Energy</div>
+<div class="flex items-center gap-2 font-data-md text-xs"><div class="w-3 h-3 rounded-sm bg-tertiary"></div> Security</div>
+<div class="flex items-center gap-2 font-data-md text-xs"><div class="w-3 h-3 rounded-sm bg-error"></div> Infrastructure</div>
+<div class="flex items-center gap-2 font-data-md text-xs"><div class="w-3 h-3 rounded-sm bg-secondary"></div> Health</div>
+</div>
+</div>
+</div>
+<!-- Bottom: Autonomy Forecast -->
+<div class="glass-card rounded-xl p-container-padding">
+<div class="flex items-center gap-3 mb-6 border-b border-outline-variant/20 pb-4">
+<span class="material-symbols-outlined text-inverse-primary">hourglass_empty</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Прогноз автономності</h3>
+<span class="ml-auto text-xs font-data-md text-on-surface-variant bg-surface-bright/20 px-2 py-1 rounded">Under current load</span>
+</div>
+<div class="space-y-6">
+<!-- Forecast Item 1 -->
+<div class="flex flex-col md:flex-row md:items-center gap-4">
+<div class="md:w-1/4">
+<span class="font-data-md text-on-surface">North District</span>
+<p class="font-body-sm text-xs text-on-surface-variant mt-1">Est. 12h remaining</p>
+</div>
+<div class="flex-1 h-8 bg-surface-bright/20 rounded relative overflow-hidden flex">
+<div class="h-full bg-secondary w-1/2 border-r border-background/50"></div>
+<div class="h-full bg-tertiary w-1/4 border-r border-background/50"></div>
+<div class="h-full bg-error w-1/8"></div>
+</div>
+</div>
+<!-- Forecast Item 2 -->
+<div class="flex flex-col md:flex-row md:items-center gap-4">
+<div class="md:w-1/4">
+<span class="font-data-md text-on-surface">Center</span>
+<p class="font-body-sm text-xs text-on-surface-variant mt-1">Est. 24h remaining</p>
+</div>
+<div class="flex-1 h-8 bg-surface-bright/20 rounded relative overflow-hidden flex">
+<div class="h-full bg-secondary w-[70%] border-r border-background/50"></div>
+<div class="h-full bg-tertiary w-[20%] border-r border-background/50"></div>
+<div class="h-full bg-error w-[5%]"></div>
+</div>
+</div>
+<!-- Forecast Item 3 -->
+<div class="flex flex-col md:flex-row md:items-center gap-4">
+<div class="md:w-1/4">
+<span class="font-data-md text-on-surface">South District</span>
+<p class="font-body-sm text-xs text-error mt-1">Critical: 2h remaining</p>
+</div>
+<div class="flex-1 h-8 bg-surface-bright/20 rounded relative overflow-hidden flex">
+<div class="h-full bg-secondary w-[10%] border-r border-background/50"></div>
+<div class="h-full bg-tertiary w-[10%] border-r border-background/50"></div>
+<div class="h-full bg-error w-[30%] glow-red relative">
+<div class="absolute inset-0 bg-white/20 animate-pulse"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-6 flex gap-4 text-xs font-data-md justify-end">
+<div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px]">check_circle</span> Stable (&gt;12h)</div>
+<div class="flex items-center gap-1 text-tertiary"><span class="material-symbols-outlined text-[14px]">warning</span> Warning (4-12h)</div>
+<div class="flex items-center gap-1 text-error"><span class="material-symbols-outlined text-[14px]">error</span> Critical (&lt;4h)</div>
+</div>
+</div>
+</main>
+</body></html>

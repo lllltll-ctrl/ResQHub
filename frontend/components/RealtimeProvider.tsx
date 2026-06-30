@@ -1,0 +1,110 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import { useStore } from "@/lib/store";
+import { api } from "@/lib/api";
+import { WS_BASE } from "@/lib/config";
+import type {
+  DashboardSummary,
+  ObjectState,
+  WsSnapshot,
+  BoltEvent,
+  Scenario,
+} from "@/lib/types";
+
+export function RealtimeProvider({ children }: { children: React.ReactNode }) {
+  const {
+    setObjects,
+    setSummary,
+    setWsConnected,
+    setRouting,
+    setActiveScenario,
+    setEvents,
+    setAssignments,
+    appendEvent,
+  } = useStore();
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    async function bootstrap() {
+      try {
+        const [summary, objects, routing, scenario, events, assignments] = await Promise.all([
+          api.dashboard(),
+          api.dashboardFull(),
+          api.routing(5),
+          api.activeScenario(),
+          api.events(50),
+          api.assignments(),
+        ]);
+        if (cancelled) return;
+        setSummary(summary as DashboardSummary);
+        setObjects(objects as ObjectState[]);
+        setRouting(routing);
+        setActiveScenario(scenario as Scenario | null);
+        setEvents(events as BoltEvent[]);
+        setAssignments(assignments);
+      } catch (e) {
+        console.error("[bootstrap] failed:", e);
+      }
+    }
+
+    function connectWs() {
+      const ws = new WebSocket(`${WS_BASE}/api/ws/stream`);
+      wsRef.current = ws;
+
+      ws.onopen = () => setWsConnected(true);
+      ws.onclose = () => {
+        setWsConnected(false);
+        reconnectTimer = setTimeout(connectWs, 2000);
+      };
+      ws.onerror = () => ws.close();
+      ws.onmessage = async (ev) => {
+        try {
+          const msg = JSON.parse(ev.data as string);
+          if (msg.type === "snapshot") {
+            const snap = msg as WsSnapshot;
+            setSummary(snap.summary);
+
+            // Для повного оновлення objects (з координатами + telemetry) — RTT fetch
+            try {
+              const objects = await api.dashboardFull();
+              setObjects(objects as ObjectState[]);
+            } catch {
+              // fallback: обновити лише status/score з snapshot
+            }
+            try {
+              const routing = await api.routing(5);
+              setRouting(routing);
+            } catch {
+              /* ignore */
+            }
+            try {
+              const scenario = await api.activeScenario();
+              setActiveScenario(scenario as Scenario | null);
+            } catch {
+              /* ignore */
+            }
+          } else if (msg.type === "event" && msg.event) {
+            // Realtime push нової події в журнал (без polling)
+            appendEvent(msg.event as BoltEvent);
+          }
+        } catch {
+          /* ignore malformed */
+        }
+      };
+    }
+
+    bootstrap().then(connectWs);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(reconnectTimer);
+      wsRef.current?.close();
+    };
+  }, []);
+
+  return <>{children}</>;
+}

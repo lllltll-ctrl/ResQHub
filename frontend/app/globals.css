@@ -1,0 +1,220 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    @apply bg-background text-on-surface antialiased;
+    font-family: Inter, system-ui, sans-serif;
+  }
+  body { min-height: 100vh; }
+
+  /* Скролбар */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #191b23; }
+  ::-webkit-scrollbar-thumb { background: #424754; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #8c909f; }
+
+  /* Leaflet коректно прокидається поверх фону */
+  .leaflet-container { background: #0b0e15 !important; }
+  .leaflet-popup-content-wrapper {
+    background: rgba(17, 24, 39, 0.95) !important;
+    color: #e1e2ec !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 12px !important;
+    backdrop-filter: blur(12px) !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+  }
+  .leaflet-popup-tip {
+    background: rgba(17, 24, 39, 0.95) !important;
+    border: none !important;
+  }
+  .leaflet-popup-close-button {
+    color: #8c909f !important;
+  }
+  .leaflet-bar a { background: #1d2027; color: #e1e2ec; }
+
+  /* Selection */
+  ::selection {
+    background: rgba(77, 142, 255, 0.3);
+    color: #e1e2ec;
+  }
+}
+
+@layer components {
+  /* Glass / cards */
+  .glass-card {
+    background-color: #111827;
+    border: 1px solid rgba(255,255,255,0.06);
+    backdrop-filter: blur(12px);
+  }
+  .panel {
+    background-color: #191b23;
+    border: 1px solid #424754;
+    border-radius: 0.5rem;
+  }
+  .card {
+    background-color: #111827;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 0.5rem;
+  }
+
+  /* Chips */
+  .chip-stable {
+    background-color: rgba(74,225,118,0.1);
+    color: #4ae176;
+    border: 1px solid rgba(74,225,118,0.2);
+  }
+  .chip-warning {
+    background-color: rgba(223,116,18,0.2);
+    color: #df7412;
+    border: 1px solid rgba(223,116,18,0.3);
+  }
+  .chip-critical {
+    background-color: rgba(255,180,171,0.2);
+    color: #ffb4ab;
+    border: 1px solid rgba(255,180,171,0.2);
+  }
+  .chip-rescue {
+    background-color: rgba(155,89,182,0.2);
+    color: #9b59b6;
+    border: 1px solid rgba(155,89,182,0.3);
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition;
+  }
+  .btn-primary {
+    @apply btn bg-primary text-on-primary hover:bg-primary-container hover:text-on-primary-container;
+  }
+  .btn-ghost {
+    @apply btn bg-surface-container-high text-on-surface hover:bg-surface-bright;
+  }
+  .btn-danger {
+    @apply btn bg-error-container text-on-error-container hover:bg-error hover:text-on-error;
+  }
+
+  /* Glow effects for emergency/danger elements */
+  .glow-red { box-shadow: 0 0 15px -3px rgba(255,180,171,0.4); }
+  .glow-blue { box-shadow: 0 0 15px -3px rgba(173,198,255,0.3); }
+  .glow-green { box-shadow: 0 0 15px -3px rgba(74,225,118,0.3); }
+  .glow-pulse {
+    animation: pulse-glow 2s cubic-bezier(0.4,0,0.6,1) infinite;
+  }
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 15px -3px rgba(255,180,171,0.8);
+      opacity: 1;
+    }
+    50% {
+      box-shadow: 0 0 25px 2px rgba(255,180,171,0.4);
+      opacity: 0.7;
+    }
+  }
+
+  /* AI action gradient border (recommendation cards) */
+  .ai-action-border {
+    background: linear-gradient(#111827, #111827) padding-box,
+                linear-gradient(to right, #4d8eff, #df7412) border-box;
+    border: 1px solid transparent;
+  }
+
+  /* Grid background for analytics page */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Leaflet marker shape */
+  .resq-marker { background: transparent; border: none; }
+
+  /* Domain helpers */
+  .label-caps {
+    @apply text-[12px] uppercase tracking-[0.05em] font-bold text-on-surface-variant;
+  }
+  .stat-value {
+    @apply font-mono text-2xl font-semibold;
+  }
+
+  /* Enhanced glassmorphism */
+  .glass-card-elevated {
+    background-color: rgba(17, 24, 39, 0.8);
+    border: 1px solid rgba(255,255,255,0.08);
+    backdrop-filter: blur(16px) saturate(1.2);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .glass-panel {
+    background-color: rgba(17, 24, 39, 0.6);
+    border: 1px solid rgba(255,255,255,0.06);
+    backdrop-filter: blur(12px);
+    border-radius: 0.75rem;
+  }
+
+  /* Smooth fade-in for page content */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-in-up {
+    animation: fadeInUp 0.4s ease-out;
+  }
+
+  /* Skeleton loading shimmer */
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .skeleton {
+    background: linear-gradient(90deg, #1d2027 25%, #2a2d35 50%, #1d2027 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 0.375rem;
+  }
+
+  /* Count-up number animation */
+  @keyframes countUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-count-up {
+    animation: countUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Slide in from right for drawers */
+  @keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  .animate-slide-in-right {
+    animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Pulsing dot for active/critical indicators */
+  @keyframes pulseDot {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.5); opacity: 0.5; }
+  }
+  .animate-pulse-dot {
+    animation: pulseDot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* Gradient border animation */
+  @keyframes borderGlow {
+    0%, 100% { border-color: rgba(77, 142, 255, 0.3); }
+    50% { border-color: rgba(77, 142, 255, 0.6); }
+  }
+  .animate-border-glow {
+    animation: borderGlow 3s ease-in-out infinite;
+  }
+
+  /* Toast notifications */
+  .toast-enter {
+    animation: slideInRight 0.3s ease-out;
+  }
+  .toast-exit {
+    animation: slideInRight 0.3s ease-out reverse;
+  }
+}
