@@ -45,6 +45,14 @@ export function OperatorBriefingPanel({
   const [error, setError] = useState<string | null>(null);
   const [usedLlm, setUsedLlm] = useState(false);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   async function load(useLlm: boolean) {
     setLoading(true);
     setError(null);
