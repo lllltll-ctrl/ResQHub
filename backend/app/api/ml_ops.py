@@ -568,6 +568,228 @@ def async_status() -> dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────
+# P4 Endpoints: online learning, concept drift, bandit, MLflow, benchmarks
+# ─────────────────────────────────────────────────────────────────────
+@router.get("/online/status")
+def online_learning_status() -> dict[str, Any]:
+    """Стан online learner (SGDRegressor-based)."""
+    from app.ml.online_learning import get_online_scorer
+
+    scorer = get_online_scorer()
+    return scorer.health_check()
+
+
+class OnlineLearnRequest(BaseModel):
+    features: list[float] = Field(..., description="13 feature values")
+    target: Optional[float] = Field(None, description="Ground truth score (optional)")
+
+
+@router.post("/online/learn")
+def online_learn(req: OnlineLearnRequest) -> dict[str, Any]:
+    """Predict + optional learn online (SGDRegressor.partial_fit)."""
+    from app.ml.online_learning import get_online_scorer
+    from app.ml.features import FEATURE_NAMES, ScoreFeatures
+
+    if len(req.features) != len(FEATURE_NAMES):
+        raise HTTPException(400, f"Expected {len(FEATURE_NAMES)} features")
+
+    try:
+        ScoreFeatures(**dict(zip(FEATURE_NAMES, req.features)))
+    except Exception as e:
+        raise HTTPException(400, f"Invalid features: {e}")
+
+    scorer = get_online_scorer()
+    return scorer.predict_and_learn(
+        np.array(req.features, dtype=np.float64),
+        target=req.target,
+    )
+
+
+@router.post("/online/reset")
+def online_reset() -> dict[str, Any]:
+    """Reset online learner (cold start)."""
+    from app.ml.online_learning import get_online_scorer
+
+    scorer = get_online_scorer()
+    scorer.reset()
+    return {"status": "reset", "message": "Online learner reset to cold start"}
+
+
+@router.get("/concept-drift/status")
+def concept_drift_status() -> dict[str, Any]:
+    """Стан concept drift monitor (ADWIN + Page-Hinkley + DDM)."""
+    from app.ml.monitoring.concept_drift import get_concept_drift_monitor
+
+    monitor = get_concept_drift_monitor()
+    return monitor.health()
+
+
+class ConceptDriftObserveRequest(BaseModel):
+    error: float = Field(..., description="Prediction error (MAE)")
+
+
+@router.post("/concept-drift/observe")
+def concept_drift_observe(req: ConceptDriftObserveRequest) -> dict[str, Any]:
+    """Додає помилку в concept drift monitor."""
+    from app.ml.monitoring.concept_drift import get_concept_drift_monitor
+
+    monitor = get_concept_drift_monitor()
+    event = monitor.add(req.error)
+    return {
+        "drift_detected": event is not None,
+        "event": (
+            {
+                "timestamp": event.timestamp,
+                "detector": event.detector,
+                "metric_before": event.metric_before,
+                "metric_after": event.metric_after,
+                "confidence": event.confidence,
+                "recommended_action": event.recommended_action,
+            }
+            if event
+            else None
+        ),
+        "monitor_state": monitor.health(),
+    }
+
+
+@router.post("/concept-drift/reset")
+def concept_drift_reset() -> dict[str, Any]:
+    """Reset concept drift monitor."""
+    from app.ml.monitoring.concept_drift import (
+        get_concept_drift_monitor,
+    )
+    import app.ml.monitoring.concept_drift as cd_module
+
+    cd_module._global_monitor = None
+    return {"status": "reset"}
+
+
+@router.get("/bandit/state")
+def bandit_state() -> dict[str, Any]:
+    """Стан multi-armed bandit (resource allocation)."""
+    from app.ml.monitoring.bandit import get_bandit
+
+    bandit = get_bandit()
+    return bandit.get_state()
+
+
+class BanditRegisterRequest(BaseModel):
+    arm_id: str
+    resource_type: str
+    base_name: str
+
+
+@router.post("/bandit/register")
+def bandit_register(req: BanditRegisterRequest) -> dict[str, Any]:
+    """Зареєструвати новий arm."""
+    from app.ml.monitoring.bandit import get_bandit
+
+    bandit = get_bandit()
+    bandit.register_arm(req.arm_id, req.resource_type, req.base_name)
+    return {"status": "registered", "arm_id": req.arm_id}
+
+
+@router.get("/bandit/select")
+def bandit_select() -> dict[str, Any]:
+    """Обрати arm за поточною стратегією (UCB1/epsilon-greedy/Thompson)."""
+    from app.ml.monitoring.bandit import get_bandit
+
+    bandit = get_bandit()
+    arm = bandit.select_arm()
+    if arm is None:
+        return {"arm_id": None, "message": "No arms registered"}
+    return {"arm_id": arm}
+
+
+class BanditUpdateRequest(BaseModel):
+    arm_id: str
+    reward: float
+    success: bool
+
+
+@router.post("/bandit/update")
+def bandit_update(req: BanditUpdateRequest) -> dict[str, Any]:
+    """Оновити arm після outcome (reward, success)."""
+    from app.ml.monitoring.bandit import get_bandit
+
+    bandit = get_bandit()
+    bandit.update(req.arm_id, req.reward, req.success)
+    return {"status": "updated", "arm_id": req.arm_id}
+
+
+@router.post("/experiment/start")
+def experiment_start(req: dict[str, str]) -> dict[str, Any]:
+    """Почати MLflow experiment run."""
+    from app.ml.experiment_tracking import ExperimentTracker
+
+    run_name = req.get("run_name", f"run_{int(time.time())}")
+    tags = {k: v for k, v in req.items() if k != "run_name"}
+    tracker = ExperimentTracker()
+    run_id = tracker.start_run(run_name, tags=tags)
+    return {"run_id": run_id, "run_name": run_name}
+
+
+@router.post("/experiment/log")
+def experiment_log(req: dict[str, Any]) -> dict[str, Any]:
+    """Записати params/metrics в активний run."""
+    from app.ml.experiment_tracking import ExperimentTracker
+
+    tracker = ExperimentTracker()
+    if req.get("params"):
+        tracker.log_params(req["params"])
+    if req.get("metrics"):
+        tracker.log_metrics(req["metrics"])
+    if req.get("artifact_path"):
+        tracker.log_artifact(req["artifact_path"])
+    if req.get("tag_key") and req.get("tag_value"):
+        tracker.set_tag(req["tag_key"], req["tag_value"])
+    return {"status": "logged"}
+
+
+@router.post("/experiment/end")
+def experiment_end(req: dict[str, str]) -> dict[str, Any]:
+    """Закрити активний run."""
+    from app.ml.experiment_tracking import ExperimentTracker
+
+    status = req.get("status", "FINISHED")
+    tracker = ExperimentTracker()
+    tracker.end_run(status=status)
+    return {"status": "ended"}
+
+
+@router.get("/benchmark/run")
+def benchmark_run(model: str = "score_model", n_samples: int = 500) -> dict[str, Any]:
+    """Запустити performance benchmark на вказаній моделі."""
+    from app.ml.benchmark import PerformanceBenchmark
+    from app.ml.inference import _load_score, model_versions
+
+    versions = model_versions()
+    if model == "score_model":
+        artifact = _load_score()
+        regressor = artifact["regressor"]
+
+        def _pred(X: np.ndarray) -> np.ndarray:
+            return regressor.predict(X)
+
+        bench = PerformanceBenchmark(model, versions["score_model"])
+        result = bench.run(_pred, n_samples=n_samples, feature_dim=13)
+    else:
+        raise HTTPException(400, f"Unknown model: {model}")
+
+    return result.to_dict()
+
+
+@router.get("/benchmark/history")
+def benchmark_history(limit: int = 20) -> dict[str, Any]:
+    """Історія benchmarks."""
+    from app.ml.benchmark import get_benchmark_history
+
+    history = get_benchmark_history(limit=limit)
+    return {"n": len(history), "history": history}
+
+
 @router.post("/ab/start")
 def ab_start(config: ABConfig) -> dict[str, Any]:
     """Запустити A/B тест між двома версіями моделі."""
