@@ -1,0 +1,166 @@
+{
+  "timestamp": 1782848714.8277497,
+  "n_reference": 500,
+  "n_current": 200,
+  "n_drifted": 13,
+  "drifted_features": [
+    "battery_pct",
+    "battery_est_hours",
+    "temp_c",
+    "co2_ppm",
+    "occupancy_ratio",
+    "criticality",
+    "has_generator",
+    "has_starlink",
+    "power_on",
+    "internet_on",
+    "signal",
+    "humidity_pct",
+    "generator_on"
+  ],
+  "details": [
+    {
+      "feature": "battery_pct",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": 0.045361620878544416,
+      "current_mean": 4.857641157298053,
+      "reference_std": 0.9764794723946668,
+      "current_std": 8.881784197001252e-16
+    },
+    {
+      "feature": "battery_est_hours",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": 0.04523619119848796,
+      "current_mean": 7.057221737581496,
+      "reference_std": 0.9455278512391478,
+      "current_std": 8.881784197001252e-16
+    },
+    {
+      "feature": "temp_c",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": 0.0069851113178907125,
+      "current_mean": 5.283261941106034,
+      "reference_std": 1.0008554708603135,
+      "current_std": 0.0
+    },
+    {
+      "feature": "co2_ppm",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": -0.01815759894264812,
+      "current_mean": 6.3298119782565445,
+      "reference_std": 0.9494179921910155,
+      "current_std": 8.881784197001252e-16
+    },
+    {
+      "feature": "occupancy_ratio",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": 0.06281228154406973,
+      "current_mean": 4.8453781489525705,
+      "reference_std": 1.0118461283907272,
+      "current_std": 8.881784197001252e-16
+    },
+    {
+      "feature": "criticality",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": -0.007033621008506945,
+      "current_mean": 4.930969140869913,
+      "reference_std": 1.003942411754658,
+      "current_std": 8.881784197001252e-16
+    },
+    {
+      "feature": "has_generator",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": -0.04366805798673282,
+      "current_mean": 5.755180485077918,
+      "reference_std": 1.0211590821769927,
+      "current_std": 8.881784197001252e-16
+    },
+    {
+      "feature": "has_starlink",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": 0.011223582056812845,
+      "current_mean": 5.825646648512622,
+      "reference_std": 0.9842035759659059,
+      "current_std": 0.0
+    },
+    {
+      "feature": "power_on",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": -0.09332811168762072,
+      "current_mean": 4.886930790298677,
+      "reference_std": 1.0383527281916218,
+      "current_std": 0.0
+    },
+    {
+      "feature": "internet_on",
+      "statistic": 0.994,
+      "p_value": 1.0919308832043646e-174,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": -0.013494036249373405,
+      "current_mean": 2.6321624052718926,
+      "reference_std": 1.0327855787882005,
+      "current_std": 4.440892098500626e-16
+    },
+    {
+      "feature": "signal",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": 0.03380719565844538,
+      "current_mean": 4.832950567393467,
+      "reference_std": 0.9925851723736404,
+      "current_std": 0.0
+    },
+    {
+      "feature": "humidity_pct",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": -0.04112031690700527,
+      "current_mean": 5.685397967512733,
+      "reference_std": 1.0224234673962451,
+      "current_std": 8.881784197001252e-16
+    },
+    {
+      "feature": "generator_on",
+      "statistic": 1.0,
+      "p_value": 7.945950170240135e-181,
+      "drifted": true,
+      "test": "ks_2samp",
+      "reference_mean": -0.04988359483898337,
+      "current_mean": 5.023500108484931,
+      "reference_std": 0.9741843439060796,
+      "current_std": 8.881784197001252e-16
+    }
+  ]
+}

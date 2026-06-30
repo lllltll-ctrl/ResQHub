@@ -16,6 +16,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
@@ -108,6 +109,31 @@ def get_object(db: Session, object_id: uuid.UUID) -> Object | None:
     return db.get(Object, object_id)
 
 
+def _build_features_from_telemetry(payload: TelemetryCreate, obj: Object) -> np.ndarray:
+    """Конвертує TelemetryCreate + Object у 13D feature vector для ML моделей."""
+    from app.ml.features import FEATURE_NAMES
+
+    occ_ratio = (payload.occupancy / obj.capacity) if obj.capacity > 0 else 0.0
+    return np.array(
+        [
+            payload.battery_pct,
+            payload.battery_est_hours,
+            payload.temp_c,
+            payload.co2_ppm,
+            occ_ratio,
+            float(obj.criticality),
+            float(obj.has_generator),
+            float(obj.has_starlink),
+            float(payload.power_on),
+            float(payload.internet_on),
+            float(payload.signal),
+            payload.humidity_pct,
+            float(payload.generator_on),
+        ],
+        dtype=np.float64,
+    )
+
+
 def ingest_telemetry(db: Session, payload: TelemetryCreate) -> Telemetry:
     """Зберігає телеметрію, рахує score + forecast, зберігає score."""
     obj = db.get(Object, payload.object_id)
@@ -150,6 +176,26 @@ def ingest_telemetry(db: Session, payload: TelemetryCreate) -> Telemetry:
         )
     )
 
+    # P2: Anomaly detection — soft warning, не блокує
+    anomaly_score = None
+    feature_vector = _build_features_from_telemetry(payload, obj)
+    try:
+        from app.ml.monitoring.anomaly import get_anomaly_detector
+
+        detector = get_anomaly_detector()
+        anomaly_score = detector.score(str(payload.object_id), feature_vector)
+    except Exception as e:
+        logger.debug("Anomaly check skipped: %s", e)
+
+    # P2: Drift observation — накопичує дані для майбутнього drift check
+    try:
+        from app.ml.monitoring.drift import get_drift_detector
+
+        drift_det = get_drift_detector()
+        drift_det.observe(feature_vector)
+    except Exception as e:
+        logger.debug("Drift observation skipped: %s", e)
+
     forecast = _forecast_for_object(db, payload.object_id)
 
     status = score_result.status
@@ -174,6 +220,15 @@ def ingest_telemetry(db: Session, payload: TelemetryCreate) -> Telemetry:
             **score_result.components,
             "forecast_slope_pct_per_min": forecast.slope_pct_per_min,
             "forecast_confidence": forecast.confidence,
+            **(
+                {
+                    "anomaly_score": anomaly_score.score,
+                    "anomaly_is_anomaly": anomaly_score.is_anomaly,
+                    "anomaly_reason": anomaly_score.reason,
+                }
+                if anomaly_score is not None
+                else {}
+            ),
         },
     )
     db.add(score)

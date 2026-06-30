@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.ml_ops import router as ml_ops_router
 from app.api.routes import broadcast_event_loop, router
 from app.core.config import settings
 
@@ -41,6 +42,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(ml_ops_router)
 
 
 @app.get("/")
@@ -60,6 +62,11 @@ def root():
             "events": "/api/events",
             "public": "/api/public/objects",
             "ws": "/api/ws/stream",
+            "ml_health": "/api/ml/health",
+            "ml_drift": "/api/ml/drift",
+            "ml_anomalies": "/api/ml/anomalies",
+            "ml_retrain": "/api/ml/retrain",
+            "ml_ab": "/api/ml/ab",
         },
     }
 
