@@ -13,6 +13,7 @@ import { ToastContainer, pushToast } from "@/components/Toast";
 import { HeaderActions } from "@/components/HeaderActions";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { ShapBreakdown } from "@/components/SHAPBreakdown";
+import { OperatorBriefingPanel } from "@/components/OperatorBriefingPanel";
 import { RESOURCE_TYPE_UA, SCENARIO_TYPE_UA } from "@/lib/types";
 import Link from "next/link";
 import type { ObjectState, ResourceTypeT } from "@/lib/types";
@@ -55,6 +56,7 @@ function OperationsShell() {
   }, [selectedObjectId, setSelectedObjectId]);
 
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
+  const [briefingObjectId, setBriefingObjectId] = useState<string | null>(null);
 
   async function handleScenario(type: "BLACKOUT" | "RESET" | "SIGNAL_DOWN" | "PARTIAL_OUTAGE") {
     try {
@@ -274,6 +276,14 @@ function OperationsShell() {
           object={selectedObject}
           onClose={() => setSelectedObjectId(null)}
           onAssign={handleAssign}
+          onBriefing={(id) => setBriefingObjectId(id)}
+        />
+      )}
+
+      {briefingObjectId && (
+        <OperatorBriefingPanel
+          objectId={briefingObjectId}
+          onClose={() => setBriefingObjectId(null)}
         />
       )}
     </div>
@@ -386,10 +396,12 @@ function ObjectDrawer({
   object,
   onClose,
   onAssign,
+  onBriefing,
 }: {
   object: ObjectState;
   onClose: () => void;
   onAssign: (object_id: string, rt: ResourceTypeT) => Promise<void>;
+  onBriefing: (objectId: string) => void;
 }) {
   const t = object.telemetry;
   const s = object.score;
@@ -434,12 +446,23 @@ function ObjectDrawer({
           <h2 className="text-[20px] font-semibold text-primary mb-1">Деталі об&apos;єкта</h2>
           <p className="text-[14px] text-on-surface-variant">Аналіз телеметрії</p>
         </div>
-        <button
-          onClick={onClose}
-          className="p-2 text-on-surface-variant hover:text-primary transition-colors bg-surface-container rounded-full"
-        >
-          <i className="material-symbols-outlined">close</i>
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => onBriefing(object.id)}
+            className="p-2 text-primary hover:bg-primary/10 rounded-full transition-colors"
+            title="AI-брифінг для оператора"
+            aria-label="AI-брифінг"
+          >
+            <i className="material-symbols-outlined">auto_awesome</i>
+          </button>
+          <button
+            onClick={onClose}
+            className="p-2 text-on-surface-variant hover:text-primary transition-colors bg-surface-container rounded-full"
+            aria-label="Закрити"
+          >
+            <i className="material-symbols-outlined">close</i>
+          </button>
+        </div>
       </div>
       <div className="flex flex-col gap-6 overflow-y-auto">
         <div className="flex items-center gap-3 border-b border-outline-variant/20 pb-4">

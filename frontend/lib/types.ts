@@ -224,3 +224,26 @@ export const SCORE_COMPONENT_UA: Record<string, string> = {
   forecast_slope_pct_per_min: "Зміна прогнозу (%/хв)",
   forecast_confidence: "Впевненість прогнозу",
 };
+
+export interface BriefingKeyFactor {
+  feature: string;
+  contribution: number;
+}
+
+export interface Briefing {
+  summary: string;
+  severity: "STABLE" | "WARNING" | "CRITICAL";
+  recommended_actions: string[];
+  key_factors: BriefingKeyFactor[];
+  model_confidence: number;
+  method: "template" | "llm";
+  object_id: string;
+  object_name: string;
+  object_type: string;
+  ml_score: number;
+  ml_status: StatusT;
+  ttc_minutes: number | null;
+  anomaly_detected: boolean;
+  anomaly_score: number | null;
+  drift_detected: boolean;
+}

@@ -232,6 +232,33 @@ def list_events(db: Session = Depends(get_db), limit: int = 50):
     return orchestrator.get_events(db, limit=limit)
 
 
+# ---------- Operator Briefing (ML/LLM) ----------
+@router.get("/briefing/{object_id}")
+def get_briefing(
+    object_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    use_llm: bool = False,
+):
+    """
+    Генерує людино-читабельний брифінг для оператора.
+
+    Args:
+        object_id: UUID об'єкта
+        use_llm: true → спробувати LLM (потребує OPENAI_API_KEY),
+                 false → тільки template (детерміністичний, завжди працює)
+
+    Returns:
+        dict з summary, recommended_actions, key_factors, model_confidence, method
+    """
+    briefing = orchestrator.get_operator_briefing(db, object_id, use_llm=use_llm)
+    if briefing is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Object not found or no recent score/telemetry",
+        )
+    return briefing
+
+
 # ---------- Public (мешканський UI) ----------
 @public_router.get("/objects", response_model=list[PublicObjectOut])
 def public_objects(

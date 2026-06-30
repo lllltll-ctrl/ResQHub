@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 import numpy as np
 from sqlalchemy import desc, func, select
@@ -860,6 +861,115 @@ def get_public_objects(
         )
     out.sort(key=lambda x: x["distance_m"])
     return out
+
+
+def get_operator_briefing(
+    db: Session,
+    object_id: uuid.UUID,
+    use_llm: bool = False,
+) -> Optional[dict]:
+    """
+    Генерує людино-читабельний брифінг для оператора на основі ML score,
+    SHAP contributions, anomaly, drift та TTC forecast.
+
+    Args:
+        db: SQLAlchemy session
+        object_id: ID об'єкта
+        use_llm: True → спробувати LLM, False → тільки template (детерміністичний)
+
+    Returns:
+        dict з summary, severity, recommended_actions, key_factors, model_confidence, method
+        або None якщо об'єкт не знайдено
+    """
+    from app.ml.operator_briefing import (
+        generate_llm_briefing,
+        generate_template_briefing,
+    )
+    from app.ml.features import ScoreFeatures
+
+    obj = db.get(Object, object_id)
+    if not obj:
+        return None
+
+    score_row = get_latest_score(db, object_id)
+    telemetry = get_latest_telemetry(db, object_id)
+    if not score_row or not telemetry:
+        return None
+
+    components = score_row.components or {}
+    ml_confidence = float(components.get("ml_prediction_confidence", 0.85))
+    anomaly_score = components.get("anomaly_score")
+    anomaly_is_anomaly = bool(components.get("anomaly_is_anomaly", False))
+
+    features = ScoreFeatures(
+        battery_pct=float(np.clip(telemetry.battery_pct, 0, 100)),
+        battery_est_hours=float(telemetry.battery_est_hours),
+        temp_c=float(telemetry.temp_c),
+        co2_ppm=float(telemetry.co2_ppm),
+        occupancy_ratio=(
+            telemetry.occupancy / obj.capacity if obj.capacity > 0 else 0.0
+        ),
+        criticality=int(obj.criticality),
+        has_generator=bool(obj.has_generator),
+        has_starlink=bool(obj.has_starlink),
+        power_on=bool(telemetry.power_on),
+        internet_on=bool(telemetry.internet_on),
+        signal=int(telemetry.signal),
+        humidity_pct=float(telemetry.humidity_pct),
+        generator_on=bool(telemetry.generator_on),
+    )
+
+    ttc_minutes = score_row.time_to_critical_min
+    drift_detected = components.get("ml_tree_spread", 0) > 8.0
+
+    try:
+        if use_llm:
+            briefing = generate_llm_briefing(
+                object_name=obj.name,
+                object_type=obj.type.value,
+                features=features,
+                ml_score=score_row.score,
+                ml_status=score_row.status.value,
+                ml_confidence=ml_confidence,
+                anomaly_detected=anomaly_is_anomaly,
+                drift_detected=drift_detected,
+                ttc_minutes=ttc_minutes,
+            )
+        else:
+            briefing = generate_template_briefing(
+                object_name=obj.name,
+                object_type=obj.type.value,
+                features=features,
+                ml_score=score_row.score,
+                ml_status=score_row.status.value,
+                ml_confidence=ml_confidence,
+                anomaly_detected=anomaly_is_anomaly,
+                drift_detected=drift_detected,
+                ttc_minutes=ttc_minutes,
+            )
+    except Exception as e:
+        logger.exception("Briefing generation failed: %s", e)
+        return None
+
+    return {
+        "summary": briefing.summary,
+        "severity": briefing.severity,
+        "recommended_actions": list(briefing.recommended_actions),
+        "key_factors": [
+            {"feature": k, "contribution": v} for k, v in briefing.key_factors
+        ],
+        "model_confidence": briefing.model_confidence,
+        "method": briefing.method,
+        "object_id": str(obj.id),
+        "object_name": obj.name,
+        "object_type": obj.type.value,
+        "ml_score": score_row.score,
+        "ml_status": score_row.status.value,
+        "ttc_minutes": ttc_minutes,
+        "anomaly_detected": anomaly_is_anomaly,
+        "anomaly_score": float(anomaly_score) if anomaly_score is not None else None,
+        "drift_detected": drift_detected,
+    }
 
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
