@@ -64,6 +64,7 @@ export const api = {
 
   modelCards: () => getJson<ModelCard[]>(`/api/models/cards`),
   modelHealth: () => getJson<ModelHealth>(`/api/models/health`),
+  driftStatus: () => getJson<DriftStatus>(`/api/ml/drift`),
 
   telemetry: (object_id: string, limit = 50) =>
     getJson<unknown[]>(`/api/telemetry/${object_id}?limit=${limit}`),

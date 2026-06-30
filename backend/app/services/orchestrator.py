@@ -974,6 +974,50 @@ def get_operator_briefing(
     }
 
 
+def get_drift_status() -> dict:
+    """
+    Поточний стан drift detection:
+    - чи є reference dataset
+    - скільки observations зібрано
+    - чи є drift в поточному вікні
+    - per-feature drift scores
+    """
+    try:
+        from app.ml.monitoring.drift import get_drift_detector
+
+        detector = get_drift_detector()
+        report = detector.check_drift()
+        return {
+            "n_observations": len(detector._current),
+            "has_reference": detector._reference is not None,
+            "drift_detected": bool(report.drift_detected) if report else False,
+            "n_drifted_features": int(report.n_drifted) if report else 0,
+            "features": [
+                {
+                    "feature": f.feature,
+                    "statistic": round(float(f.statistic), 4),
+                    "p_value": round(float(f.p_value), 4),
+                    "drifted": bool(f.drifted),
+                    "current_mean": round(float(f.current_mean), 3),
+                    "reference_mean": round(float(f.reference_mean), 3),
+                }
+                for f in (report.feature_drifts if report else [])
+            ],
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        logger.exception("Drift check failed: %s", e)
+        return {
+            "n_observations": 0,
+            "has_reference": False,
+            "drift_detected": False,
+            "n_drifted_features": 0,
+            "features": [],
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "error": str(e),
+        }
+
+
 def get_model_cards() -> list[dict]:
     """
     Повертає список model cards для governance dashboard.

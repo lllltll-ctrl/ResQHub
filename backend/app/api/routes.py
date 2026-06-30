@@ -316,6 +316,17 @@ def get_model_health():
     return orchestrator.get_model_health()
 
 
+@router.get("/ml/drift")
+def get_drift_status():
+    """
+    Поточний стан concept drift detection:
+    - n_observations зібрано
+    - drift_detected flag
+    - per-feature KS-test scores
+    """
+    return orchestrator.get_drift_status()
+
+
 # ---------- Public (мешканський UI) ----------
 @public_router.get("/objects", response_model=list[PublicObjectOut])
 def public_objects(

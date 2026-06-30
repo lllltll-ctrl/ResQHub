@@ -323,3 +323,22 @@ export interface ModelHealth {
   };
   artifacts: Record<string, ModelHealthArtifact>;
 }
+
+export interface DriftFeature {
+  feature: string;
+  statistic: number;
+  p_value: number;
+  drifted: boolean;
+  current_mean: number;
+  reference_mean: number;
+}
+
+export interface DriftStatus {
+  n_observations: number;
+  has_reference: boolean;
+  drift_detected: boolean;
+  n_drifted_features: number;
+  features: DriftFeature[];
+  checked_at: string;
+  error?: string;
+}

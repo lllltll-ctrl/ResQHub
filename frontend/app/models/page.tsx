@@ -96,6 +96,10 @@ export default function ModelsPage() {
         {health && !loading && <HealthBanner health={health} />}
 
         {cards.length > 0 && !loading && (
+          <DriftPanel />
+        )}
+
+        {cards.length > 0 && !loading && (
           <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
             {cards.map((card) => (
               <ModelCardView key={card.model_name} card={card} />
@@ -175,6 +179,90 @@ function HealthBanner({ health }: { health: ModelHealth }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DriftPanel() {
+  const [drift, setDrift] = useState<import("@/lib/types").DriftStatus | null>(
+    null,
+  );
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const data = await api.driftStatus();
+        if (!cancelled) setDrift(data);
+      } catch {
+        if (!cancelled) setDrift(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="mt-6 bg-surface-container-low border border-outline-variant/30 rounded-lg p-4 text-[12px] text-on-surface-variant">
+        Перевіряю drift...
+      </div>
+    );
+  }
+  if (!drift) return null;
+
+  const driftedFeatures = drift.features.filter((f) => f.drifted).slice(0, 5);
+
+  return (
+    <div
+      className={`mt-6 border rounded-lg p-4 ${
+        drift.drift_detected
+          ? "bg-error-container/10 border-error/30"
+          : "bg-secondary-container/10 border-secondary/30"
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <i
+          className={`material-symbols-outlined text-[24px] ${
+            drift.drift_detected ? "text-error" : "text-secondary"
+          }`}
+        >
+          {drift.drift_detected ? "warning" : "verified"}
+        </i>
+        <div>
+          <h3 className="font-bold text-[14px] text-on-surface">
+            {drift.drift_detected
+              ? "Concept Drift Detected"
+              : "No Drift Detected"}
+          </h3>
+          <p className="text-[12px] text-on-surface-variant">
+            {drift.n_observations} observations •{" "}
+            {drift.n_drifted_features}/{drift.features.length} features drifted
+            (KS-test, p&lt;0.05)
+          </p>
+        </div>
+      </div>
+
+      {driftedFeatures.length > 0 && (
+        <div className="mt-3 flex flex-col gap-1">
+          {driftedFeatures.map((f) => (
+            <div
+              key={f.feature}
+              className="flex justify-between text-[12px] font-mono py-1 px-2 bg-error-container/20 rounded"
+            >
+              <span className="text-on-surface">{f.feature}</span>
+              <span className="text-error">
+                KS={f.statistic.toFixed(2)} • p={f.p_value.toFixed(3)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
