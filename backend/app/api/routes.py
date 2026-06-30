@@ -259,6 +259,43 @@ def get_briefing(
     return briefing
 
 
+# ---------- Counterfactual "what-if" ----------
+@router.post("/counterfactual/{object_id}")
+def post_counterfactual(
+    object_id: uuid.UUID,
+    intervention_type: str = "generator",
+    eta_min: int = 30,
+    db: Session = Depends(get_db),
+):
+    """
+    Counterfactual analysis: "що якщо призначити ресурс X об'єкту Y?".
+
+    Args:
+        object_id: UUID об'єкта
+        intervention_type: generator | tech_team | starlink | fuel | evacuation
+        eta_min: ETA в хвилинах (впливає на прогноз)
+
+    Returns:
+        dict з before/after scores, status, TTC, top SHAP deltas
+    """
+    valid_types = {"generator", "tech_team", "starlink", "fuel", "evacuation"}
+    if intervention_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid intervention_type. Must be one of: {sorted(valid_types)}",
+        )
+
+    result = orchestrator.run_counterfactual_for_object(
+        db, object_id, intervention_type=intervention_type, eta_min=eta_min
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Object not found or no recent score/telemetry",
+        )
+    return result
+
+
 # ---------- Public (мешканський UI) ----------
 @public_router.get("/objects", response_model=list[PublicObjectOut])
 def public_objects(

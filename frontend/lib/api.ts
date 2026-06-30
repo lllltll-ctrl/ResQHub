@@ -52,6 +52,16 @@ export const api = {
   briefing: (object_id: string, use_llm = false) =>
     getJson<Briefing>(`/api/briefing/${object_id}?use_llm=${use_llm}`),
 
+  counterfactual: (
+    object_id: string,
+    intervention_type: string,
+    eta_min = 30,
+  ) =>
+    postJson<Counterfactual>(
+      `/api/counterfactual/${object_id}?intervention_type=${intervention_type}&eta_min=${eta_min}`,
+      {},
+    ),
+
   telemetry: (object_id: string, limit = 50) =>
     getJson<unknown[]>(`/api/telemetry/${object_id}?limit=${limit}`),
   scores: (object_id: string, limit = 50) => getJson<Score[]>(`/api/scores/${object_id}?limit=${limit}`),

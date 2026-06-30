@@ -247,3 +247,41 @@ export interface Briefing {
   anomaly_score: number | null;
   drift_detected: boolean;
 }
+
+export type InterventionTypeT =
+  | "generator"
+  | "tech_team"
+  | "starlink"
+  | "fuel"
+  | "evacuation";
+
+export interface CounterfactualFeatureChange {
+  feature: string;
+  before: number;
+  after: number;
+  delta: number;
+}
+
+export interface Counterfactual {
+  object_id: string;
+  object_name: string;
+  object_type: string;
+  intervention_type: InterventionTypeT;
+  intervention_label: string;
+  eta_min: number;
+  before: {
+    score: number;
+    status: string;
+    ttc_min: number | null;
+  };
+  after: {
+    score: number;
+    status: string;
+    ttc_min: number | null;
+  };
+  score_delta: number;
+  ttc_delta_min: number | null;
+  will_rescue: boolean;
+  top_feature_changes: CounterfactualFeatureChange[];
+  recommendation: string;
+}

@@ -14,6 +14,7 @@ import { HeaderActions } from "@/components/HeaderActions";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { ShapBreakdown } from "@/components/SHAPBreakdown";
 import { OperatorBriefingPanel } from "@/components/OperatorBriefingPanel";
+import { CounterfactualPanel } from "@/components/CounterfactualPanel";
 import { RESOURCE_TYPE_UA, SCENARIO_TYPE_UA } from "@/lib/types";
 import Link from "next/link";
 import type { ObjectState, ResourceTypeT } from "@/lib/types";
@@ -57,6 +58,9 @@ function OperationsShell() {
 
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
   const [briefingObjectId, setBriefingObjectId] = useState<string | null>(null);
+  const [counterfactualObjectId, setCounterfactualObjectId] = useState<
+    string | null
+  >(null);
 
   async function handleScenario(type: "BLACKOUT" | "RESET" | "SIGNAL_DOWN" | "PARTIAL_OUTAGE") {
     try {
@@ -277,6 +281,7 @@ function OperationsShell() {
           onClose={() => setSelectedObjectId(null)}
           onAssign={handleAssign}
           onBriefing={(id) => setBriefingObjectId(id)}
+          onCounterfactual={(id) => setCounterfactualObjectId(id)}
         />
       )}
 
@@ -284,6 +289,14 @@ function OperationsShell() {
         <OperatorBriefingPanel
           objectId={briefingObjectId}
           onClose={() => setBriefingObjectId(null)}
+        />
+      )}
+
+      {counterfactualObjectId && (
+        <CounterfactualPanel
+          objectId={counterfactualObjectId}
+          objectName={objects.find((o) => o.id === counterfactualObjectId)?.name ?? ""}
+          onClose={() => setCounterfactualObjectId(null)}
         />
       )}
     </div>
@@ -397,11 +410,13 @@ function ObjectDrawer({
   onClose,
   onAssign,
   onBriefing,
+  onCounterfactual,
 }: {
   object: ObjectState;
   onClose: () => void;
   onAssign: (object_id: string, rt: ResourceTypeT) => Promise<void>;
   onBriefing: (objectId: string) => void;
+  onCounterfactual: (objectId: string) => void;
 }) {
   const t = object.telemetry;
   const s = object.score;
@@ -447,6 +462,14 @@ function ObjectDrawer({
           <p className="text-[14px] text-on-surface-variant">Аналіз телеметрії</p>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => onCounterfactual(object.id)}
+            className="p-2 text-tertiary hover:bg-tertiary/10 rounded-full transition-colors"
+            title="What-if: ML counterfactual"
+            aria-label="Counterfactual"
+          >
+            <i className="material-symbols-outlined">science</i>
+          </button>
           <button
             onClick={() => onBriefing(object.id)}
             className="p-2 text-primary hover:bg-primary/10 rounded-full transition-colors"

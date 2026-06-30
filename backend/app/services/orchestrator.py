@@ -972,6 +972,135 @@ def get_operator_briefing(
     }
 
 
+def run_counterfactual_for_object(
+    db: Session,
+    object_id: uuid.UUID,
+    intervention_type: str = "generator",
+    eta_min: int = 30,
+) -> Optional[dict]:
+    """
+    Counterfactual "що якщо": обчислює, як зміниться ML score
+    конкретного об'єкта якщо застосувати intervention
+    (наприклад, призначити генератор).
+
+    Args:
+        db: SQLAlchemy session
+        object_id: ID об'єкта
+        intervention_type: тип втручання (generator/tech_team/starlink/fuel/evacuation)
+        eta_min: ETA в хвилинах
+
+    Returns:
+        dict з before/after scores, status, TTC, SHAP delta, recommendation
+        або None якщо об'єкт не знайдено
+    """
+    from app.ml.counterfactual import (
+        InterventionSpec,
+        analyze_intervention,
+    )
+    from app.ml.features import ScoreFeatures
+
+    obj = db.get(Object, object_id)
+    if not obj:
+        return None
+
+    score_row = get_latest_score(db, object_id)
+    telemetry = get_latest_telemetry(db, object_id)
+    if not score_row or not telemetry:
+        return None
+
+    base_features = ScoreFeatures(
+        battery_pct=float(np.clip(telemetry.battery_pct, 0, 100)),
+        battery_est_hours=float(telemetry.battery_est_hours),
+        temp_c=float(telemetry.temp_c),
+        co2_ppm=float(telemetry.co2_ppm),
+        occupancy_ratio=(
+            telemetry.occupancy / obj.capacity if obj.capacity > 0 else 0.0
+        ),
+        criticality=int(obj.criticality),
+        has_generator=bool(obj.has_generator),
+        has_starlink=bool(obj.has_starlink),
+        power_on=bool(telemetry.power_on),
+        internet_on=bool(telemetry.internet_on),
+        signal=int(telemetry.signal),
+        humidity_pct=float(telemetry.humidity_pct),
+        generator_on=bool(telemetry.generator_on),
+    )
+
+    intervention = InterventionSpec(
+        object_id=str(object_id),
+        intervention_type=intervention_type,
+        eta_min=eta_min,
+    )
+
+    try:
+        result = analyze_intervention(obj.name, base_features, intervention)
+    except Exception as e:
+        logger.exception("Counterfactual failed: %s", e)
+        return None
+
+    # Compute baseline SHAP для порівняння
+    from app.ml.explain import explain_score
+
+    before_shap = explain_score(base_features)
+    # After features
+    from app.ml.counterfactual import _apply_intervention_to_features
+
+    after_features = _apply_intervention_to_features(base_features, intervention)
+    after_shap = explain_score(after_features)
+
+    # Top deltas (які фіч найбільше змінилися)
+    feature_deltas: list[dict] = []
+    for fname in before_shap:
+        b = before_shap.get(fname, 0.0)
+        a = after_shap.get(fname, 0.0)
+        delta = a - b
+        if abs(delta) > 0.01:
+            feature_deltas.append(
+                {
+                    "feature": fname,
+                    "before": round(b, 3),
+                    "after": round(a, 3),
+                    "delta": round(delta, 3),
+                }
+            )
+    feature_deltas.sort(key=lambda d: -abs(d["delta"]))
+
+    intervention_ua = {
+        "generator": "Генератор",
+        "tech_team": "Техбригада",
+        "starlink": "Starlink",
+        "fuel": "Паливо",
+        "evacuation": "Евакуація",
+    }.get(intervention_type, intervention_type)
+
+    return {
+        "object_id": str(obj.id),
+        "object_name": obj.name,
+        "object_type": obj.type.value,
+        "intervention_type": intervention_type,
+        "intervention_label": intervention_ua,
+        "eta_min": eta_min,
+        "before": {
+            "score": result.before_score,
+            "status": result.before_status,
+            "ttc_min": result.before_ttc_min,
+        },
+        "after": {
+            "score": result.after_score,
+            "status": result.after_status,
+            "ttc_min": result.after_ttc_min,
+        },
+        "score_delta": result.score_delta,
+        "ttc_delta_min": result.ttc_delta_min,
+        "will_rescue": result.will_rescue,
+        "top_feature_changes": feature_deltas[:5],
+        "recommendation": (
+            f"Якщо призначити {intervention_ua} — score зміниться на {result.score_delta:+.1f} "
+            f"({result.before_status} → {result.after_status})."
+        ),
+    }
+
+
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Відстань у метрах між двома точками."""
     from math import asin, cos, pi, sin, sqrt
