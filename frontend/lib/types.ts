@@ -42,7 +42,7 @@ export interface Score {
   score: number;
   status: StatusT;
   time_to_critical_min: number | null;
-  components: Record<string, number>;
+  components: Record<string, unknown>;
   ts: string;
 }
 

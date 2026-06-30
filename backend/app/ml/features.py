@@ -37,7 +37,7 @@ class ScoreFeatures(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     battery_pct: float = Field(ge=0.0, le=100.0)
-    battery_est_hours: float = Field(ge=0.0, le=72.0)
+    battery_est_hours: float = Field(ge=0.0, le=168.0)
     temp_c: float = Field(ge=-30.0, le=60.0)
     co2_ppm: float = Field(ge=300.0, le=5000.0)
     occupancy_ratio: float = Field(ge=0.0, le=2.0)

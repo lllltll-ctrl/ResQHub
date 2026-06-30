@@ -12,7 +12,8 @@ import { StatCard } from "@/components/StatCard";
 import { ToastContainer, pushToast } from "@/components/Toast";
 import { HeaderActions } from "@/components/HeaderActions";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { RESOURCE_TYPE_UA, SCENARIO_TYPE_UA, SCORE_COMPONENT_UA } from "@/lib/types";
+import { ShapBreakdown } from "@/components/SHAPBreakdown";
+import { RESOURCE_TYPE_UA, SCENARIO_TYPE_UA } from "@/lib/types";
 import Link from "next/link";
 import type { ObjectState, ResourceTypeT } from "@/lib/types";
 
@@ -479,11 +480,13 @@ function ObjectDrawer({
             <h4 className="font-bold text-[12px] uppercase tracking-wider text-on-surface-variant">Бал стійкості</h4>
             <ScoreRing score={score} size={56} thickness={6} />
           </div>
-          <div className="flex flex-col gap-2">
-            {s?.components && Object.entries(s.components).map(([k, v]) => (
-              <ScoreComponent label={SCORE_COMPONENT_UA[k] ?? k} value={v as number} key={k} />
-            ))}
-          </div>
+          {s?.components ? (
+            <ShapBreakdown components={s.components as Record<string, unknown>} />
+          ) : (
+            <p className="text-on-surface-variant italic text-[12px]">
+              ML-компоненти ще не розраховані
+            </p>
+          )}
         </div>
 
         {/* Forecast */}
@@ -530,24 +533,6 @@ function TelemetryStat({ label, value, color }: { label: string; value: string; 
     <div className="bg-[#111827] p-3 rounded-lg border border-white/5 flex flex-col gap-1">
       <span className="font-bold text-[12px] uppercase tracking-wider text-on-surface-variant">{label}</span>
       <span className="font-mono text-[24px] font-semibold" style={{ color }}>{value}</span>
-    </div>
-  );
-}
-
-function ScoreComponent({ label, value }: { label: string; value: number }) {
-  const isBool = value === 0 || value === 1;
-  const displayValue = isBool ? (value === 1 ? "Так" : "Ні") : String(value);
-  const widthPct = isBool ? value * 100 : Math.max(0, Math.min(100, value));
-  const color = widthPct >= 70 ? "#4ae176" : widthPct >= 40 ? "#df7412" : "#ffb4ab";
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex justify-between font-mono text-[12px]">
-        <span className="text-on-surface capitalize">{label}</span>
-        <span style={{ color }}>{displayValue}</span>
-      </div>
-      <div className="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${widthPct}%`, background: color }} />
-      </div>
     </div>
   );
 }
