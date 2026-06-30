@@ -244,3 +244,144 @@ def ab_stop() -> dict[str, Any]:
     with _ab_lock:
         _ab_config = None
     return {"status": "stopped"}
+
+
+class BriefingRequest(BaseModel):
+    object_id: str
+    use_llm: bool = False
+
+
+@router.post("/briefing")
+def operator_briefing(req: BriefingRequest) -> dict[str, Any]:
+    """Генерує людино-читабельний брифінг для оператора.
+
+    Використовує ML score + SHAP + anomaly + drift context.
+    """
+    from app.ml.inference import predict_score
+    from app.ml.monitoring.anomaly import get_anomaly_detector
+    from app.ml.monitoring.drift import get_drift_detector
+    from app.ml.operator_briefing import (
+        generate_llm_briefing,
+        generate_template_briefing,
+    )
+    from app.services.orchestrator import _build_features_from_telemetry
+    from sqlalchemy import desc, select
+    from app.core.database import SessionLocal
+    from app.models.domain import Object, Telemetry, Score
+
+    db = SessionLocal()
+    try:
+        try:
+            oid = uuid.UUID(req.object_id)
+        except ValueError:
+            raise HTTPException(400, "Invalid object_id")
+
+        obj = db.get(Object, oid)
+        if obj is None:
+            raise HTTPException(404, "Object not found")
+
+        last_t = db.scalars(
+            select(Telemetry)
+            .where(Telemetry.object_id == oid)
+            .order_by(desc(Telemetry.ts))
+            .limit(1)
+        ).first()
+
+        if last_t is None:
+            raise HTTPException(404, "No telemetry data")
+
+        last_s = db.scalars(
+            select(Score)
+            .where(Score.object_id == oid)
+            .order_by(desc(Score.ts))
+            .limit(1)
+        ).first()
+
+        # Build features
+        feature_vector = _build_features_from_telemetry(last_t, obj)
+        from app.ml.features import ScoreFeatures
+
+        features = ScoreFeatures(
+            battery_pct=last_t.battery_pct,
+            battery_est_hours=last_t.battery_est_hours,
+            temp_c=last_t.temp_c,
+            co2_ppm=last_t.co2_ppm,
+            occupancy_ratio=(
+                last_t.occupancy / obj.capacity if obj.capacity > 0 else 0.0
+            ),
+            criticality=obj.criticality,
+            has_generator=obj.has_generator,
+            has_starlink=obj.has_starlink,
+            power_on=last_t.power_on,
+            internet_on=last_t.internet_on,
+            signal=last_t.signal,
+            humidity_pct=last_t.humidity_pct,
+            generator_on=last_t.generator_on,
+        )
+
+        pred = predict_score(features)
+
+        # Anomaly check
+        try:
+            anomaly_score = get_anomaly_detector().score(req.object_id, feature_vector)
+            anomaly_flag = anomaly_score.is_anomaly
+        except Exception:
+            anomaly_flag = False
+
+        # Drift check (cheap, just look at report)
+        try:
+            from app.ml.monitoring.drift import DRIFT_REPORT_PATH
+            import json
+
+            if DRIFT_REPORT_PATH.exists():
+                drift_report = json.loads(DRIFT_REPORT_PATH.read_text())
+                drift_flag = drift_report.get("n_drifted", 0) > 0
+            else:
+                drift_flag = False
+        except Exception:
+            drift_flag = False
+
+        ttc = last_s.time_to_critical_min if last_s else None
+
+        if req.use_llm:
+            briefing = generate_llm_briefing(
+                object_name=obj.name,
+                object_type=obj.type.value,
+                features=features,
+                ml_score=pred.score,
+                ml_status=pred.status,
+                ml_confidence=pred.confidence,
+                anomaly_detected=anomaly_flag,
+                drift_detected=drift_flag,
+                ttc_minutes=ttc,
+            )
+        else:
+            briefing = generate_template_briefing(
+                object_name=obj.name,
+                object_type=obj.type.value,
+                features=features,
+                ml_score=pred.score,
+                ml_status=pred.status,
+                ml_confidence=pred.confidence,
+                anomaly_detected=anomaly_flag,
+                drift_detected=drift_flag,
+                ttc_minutes=ttc,
+            )
+
+        return {
+            "object_id": req.object_id,
+            "object_name": obj.name,
+            "summary": briefing.summary,
+            "severity": briefing.severity,
+            "recommended_actions": briefing.recommended_actions,
+            "key_factors": [
+                {"feature": k, "shap_value": v} for k, v in briefing.key_factors
+            ],
+            "model_confidence": briefing.model_confidence,
+            "method": briefing.method,
+            "anomaly_detected": anomaly_flag,
+            "drift_detected": drift_flag,
+            "ttc_minutes": ttc,
+        }
+    finally:
+        db.close()

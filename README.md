@@ -11,100 +11,174 @@
 
 ---
 
+## 🧠 ML/AI Система (Production-ready)
+
+### Архітектура (`backend/app/ml/`)
+
+```
+ml/
+├── features.py         # Pydantic-валідація 13 фічей
+├── dataset.py          # Реалістичний synthetic dataset (4 сценарії блекаутів)
+├── train.py            # Training pipeline: RF + LightGBM ranker
+├── inference.py        # Thread-safe load-once inference
+├── store.py            # joblib-серіалізація з версіонуванням
+├── explain.py          # SHAP-based пояснення
+├── routing_ml.py       # Haversine + LightGBM ranker features
+├── bayesian_forecast.py # Kalman Filter для time-to-critical
+├── operator_briefing.py # Template/LLM-based operator narrative
+└── monitoring/
+    ├── drift.py        # Kolmogorov-Smirnov drift detection
+    ├── anomaly.py      # Isolation Forest sensor anomaly
+    └── vrp_solver.py   # PuLP-based Vehicle Routing Problem
+```
+
+### Моделі
+
+| Модель | Тип | Метрики | Артефакт |
+|---|---|---|---|
+| **Resilience Score** | `RandomForestRegressor` (200 trees) | R²=0.993, accuracy=0.935, Brier<0.07 | `score_model_1.0.0.joblib` |
+| **Priority Ranker** | `LightGBM lambdarank` | NDCG@5=1.000, NDCG@10=0.999 | `ranker_model_1.0.0.joblib` |
+| **Anomaly Detector** | `IsolationForest` (200 trees) | contamination=0.05 | `anomaly_detector.joblib` |
+
+### Тренування
+
+```bash
+cd backend
+python -m app.ml.train
+```
+
+Метрики: RMSE, MAE, R², Brier, NDCG@5/@10, calibration plot (PNG), SHAP importance.
+
+### ML Ops API (P2)
+
+| Endpoint | Метод | Опис |
+|---|---|---|
+| `/api/ml/health` | GET | Стан усіх моделей |
+| `/api/ml/versions` | GET | Активні версії + A/B config |
+| `/api/ml/drift` | GET | Останній drift report |
+| `/api/ml/drift/check` | GET | Запустити drift check |
+| `/api/ml/drift/observe` | POST | Додати observation |
+| `/api/ml/anomalies` | GET | Останні anomalies |
+| `/api/ml/anomalies/score` | POST | Score single reading |
+| `/api/ml/retrain` | POST | Async retrain (BackgroundTasks) |
+| `/api/ml/ab/start` | POST | Запустити A/B тест |
+| `/api/ml/ab/stop` | POST | Зупинити A/B тест |
+| `/api/ml/briefing` | POST | Operator briefing (template/LLM) |
+
+### A/B Testing
+
+```bash
+# Запустити A/B тест: 50% traffic на model v1.0.0, 50% на v1.1.0
+curl -X POST http://localhost:8000/api/ml/ab/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_a_version": "1.0.0",
+    "model_b_version": "1.1.0",
+    "traffic_split": 0.5
+  }'
+```
+
+### Тести
+
+```bash
+cd backend
+pytest tests/ -v
+# 36/36 passing:
+#   test_ml.py          (10 tests — features, dataset, inference)
+#   test_monitoring.py  (11 tests — drift, anomaly, VRP)
+#   test_bayesian.py    (7 tests — Kalman filter)
+#   test_briefing.py    (8 tests — operator briefing)
+```
+
+---
+
 ## 🧠 Ключові інновації (Штучний інтелект та Логістика)
 
-1.  **Machine Learning Score Engine:** 
-    Замість використання звичайних математичних формул, ResQHub використовує `RandomForestRegressor` (на базі `scikit-learn`) для розрахунку Resilience Score. Модель навчена на історичних та симульованих датасетах блекаутів, що дозволяє виявляти нелінійні залежності між швидкістю розряду батарей, зростанням CO2 та переповненням об'єктів.
-2.  **Operations Research Routing:** 
-    Для розподілу обмеженої кількості генераторів по місту використовується **Угорський алгоритм (Hungarian Algorithm)** через `scipy.optimize.linear_sum_assignment`. Алгоритм будує Cost-матрицю на основі відстаней та пріоритету об'єктів, автоматично призначаючи техніку так, щоб мінімізувати час доїзду і врятувати найбільш критичні точки.
+1.  **Machine Learning Score Engine:**
+    `RandomForestRegressor` (на базі `scikit-learn`) для розрахунку Resilience Score. Модель навчена на синтетичних історичних датасетах блекаутів (4 сценарії), виявляє нелінійні залежності між швидкістю розряду батарей, зростанням CO₂ та переповненням об'єктів. **SHAP** для explainability.
+
+2.  **Operations Research Routing:**
+    - **LightGBM ranker** (`lambdarank`) для priority assignment
+    - **PuLP-based VRP** з capacity constraints і time windows
+    - **Hungarian algorithm** (scipy) як fallback
+    - Haversine distance замість евклідової (точність на широті 50°)
+
+3.  **Bayesian Time-to-Critical Forecast:**
+    Kalman Filter з 95% confidence interval — оцінка невизначеності прогнозу розряду батареї.
+
+4.  **Anomaly Detection (Isolation Forest):**
+    Виявлення зламаних сенсорів та outlier readings у multivariate space.
+
+5.  **Drift Detection (Kolmogorov-Smirnov):**
+    Continuous monitoring розбіжностей між training distribution і live telemetry.
 
 ---
 
 ## ⚡ Швидкий старт
 
-Для коректної роботи системи рекомендується створити та використовувати віртуальне оточення Python. Нище описано процес налаштування для кожної частини системи.
+### 1. Backend
 
-### 1. Налаштування та запуск Бекенду (Backend)
-
-Перейдіть до директорії `backend` та запустіть наступні команди:
 ```bash
 cd backend
-# Створення та активація віртуального середовища (для Windows)
 python -m venv ../.venv
 ../.venv/Scripts/activate
-
-# Встановлення залежностей
 pip install -r requirements.txt
 
-# Створення конфігурації
 cp .env.example .env
-
-# Виконання міграцій бази даних
 alembic upgrade head
-
-# Наповнення БД початковими даними (обов'язково для роботи симулятора)
 python -m app.seed
 
-# Запуск сервера
+# Тренування ML-моделей (один раз, або після зміни features)
+python -m app.ml.train
+
 uvicorn app.main:app --reload --port 8000
 ```
-*Бекенд буде запущено на [http://localhost:8000](http://localhost:8000).*
 
-### 2. Запуск Симулятора телеметрії (Simulator)
+### 2. Simulator
 
-Симулятор автоматично генерує показники заряду батарей, температури, заповненості об'єктів та стану мережі.
-
-Відкрийте нову консоль та запустіть симулятор:
 ```bash
 cd simulator
-# Активація віртуального середовища
 ../.venv/Scripts/activate
-
-# Запуск симулятора
-python main.py
+python main.py --demo
 ```
-*Симулятор автоматично підтримує UTF-8 консоль на Windows та підключається до запущеного бекенду.*
 
-### 3. Запуск Фронтенду (Frontend)
+### 3. Frontend
 
-Відкрийте третю консоль для запуску клієнтської частини:
 ```bash
 cd frontend
 pnpm install
 pnpm dev
 ```
-*Інтерфейс платформи буде доступний на [http://localhost:3000](http://localhost:3000).*
 
----
-
-## 🧪 Запуск E2E тестів (Playwright)
-
-Для перевірки працездатності всього функціоналу (симуляції блекауту, карт, фільтрів мешканця, призначення техніки) запустіть E2E тест:
-
-```bash
-cd frontend
-pnpm exec node review-e2e.mjs
-```
-Результати тестування та згенеровані скріншоти будуть збережені в кореневій папці проекту (`review-report.json`, `review-ops.png` тощо).
+* Бекенд: http://localhost:8000
+* API docs: http://localhost:8000/docs
+* ML health: http://localhost:8000/api/ml/health
+* Фронтенд: http://localhost:3000
 
 ---
 
 ## 🛠️ Технологічний стек
 
 *   **Backend:** FastAPI, SQLAlchemy 2.0 (SQLite / PostgreSQL), Alembic, WebSockets, Pydantic v2
-*   **Штучний інтелект та Аналітика:** scikit-learn (RandomForestRegressor), scipy (linear_sum_assignment), numpy
+*   **Штучний інтелект та Аналітика:**
+    * `scikit-learn` (RandomForestRegressor)
+    * `scipy` (linear_sum_assignment, KS test)
+    * `lightgbm` (lambdarank)
+    * `shap` (TreeExplainer)
+    * `pulp` (ILP solver)
+    * `joblib` (model serialization)
 *   **Frontend:** Next.js 14 (App Router), Tailwind CSS, Leaflet (React-Leaflet), Recharts, Zustand
 *   **Simulator:** Asyncio, HTTPX
 
 ---
 
-## 🔍 Усунення несправностей (Troubleshooting)
+## 🔍 Troubleshooting
 
-*   **Помилка `EADDRINUSE` (port already in use):**
-    Якщо порти `3000` або `8000` зайняті процесами, завершіть їх. На Windows:
+*   **`EADDRINUSE` (port already in use):**
     ```powershell
     netstat -ano | findstr :3000
     taskkill /F /PID <PID>
     ```
-*   **База даних порожня або симулятор пише "Об'єкти відсутні":**
-    Обов'язково виконайте команду сидування початкових об'єктів: `python -m app.seed` у папці `backend/` з активованим віртуальним середовищем.
+*   **База даних порожня:** запустіть `python -m app.seed` в `backend/`
+*   **ML-модель не знайдена:** запустіть `python -m app.ml.train` в `backend/`
+*   **Drift detector not initialized:** він ініціалізується lazy при першому `/api/ml/drift/check`
