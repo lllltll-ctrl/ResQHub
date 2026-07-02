@@ -11,16 +11,15 @@ ML operations API endpoints:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import threading
-import time
 import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+import numpy as np
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from app.ml.inference import model_versions
@@ -223,99 +222,8 @@ def ml_versions() -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# P3 Endpoints: time-series, counterfactual, RCA, ensemble, model cards
+# Counterfactual + model cards
 # ─────────────────────────────────────────────────────────────────────
-@router.get("/forecast/timeseries/{object_id}")
-def time_series_forecast(
-    object_id: str,
-    horizon_min: int = 240,
-) -> dict[str, Any]:
-    """Prophet-based time-series forecast для battery/CO2/occupancy."""
-    from sqlalchemy import desc, select
-    from app.core.database import SessionLocal
-    from app.models.domain import Telemetry
-    from app.ml.time_series import forecast_object_metrics
-
-    try:
-        oid = uuid.UUID(object_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid object_id")
-
-    db = SessionLocal()
-    try:
-        history = list(
-            db.scalars(
-                select(Telemetry)
-                .where(Telemetry.object_id == oid)
-                .order_by(desc(Telemetry.ts))
-                .limit(500)
-            )
-        )[::-1]
-
-        if len(history) < 5:
-            raise HTTPException(404, "Insufficient history for forecast")
-
-        battery_hist = [(r.ts.timestamp(), r.battery_pct) for r in history]
-        co2_hist = [(r.ts.timestamp(), r.co2_ppm) for r in history]
-        occ_hist = [(r.ts.timestamp(), r.occupancy) for r in history]
-
-        forecast = forecast_object_metrics(
-            object_id=object_id,
-            battery_history=battery_hist,
-            co2_history=co2_hist,
-            occupancy_history=occ_hist,
-            horizon_min=horizon_min,
-        )
-
-        return {
-            "object_id": forecast.object_id,
-            "horizon_min": forecast.horizon_min
-            if hasattr(forecast, "horizon_min")
-            else horizon_min,
-            "generated_at": forecast.generated_at,
-            "warnings": forecast.warnings,
-            "battery": (
-                {
-                    "current": forecast.battery_forecast.current_value,
-                    "predicted": forecast.battery_forecast.predicted_value,
-                    "lower": forecast.battery_forecast.lower_bound,
-                    "upper": forecast.battery_forecast.upper_bound,
-                    "trend": forecast.battery_forecast.trend_direction,
-                    "method": forecast.battery_forecast.method,
-                    "confidence": forecast.battery_forecast.confidence,
-                }
-                if forecast.battery_forecast
-                else None
-            ),
-            "co2": (
-                {
-                    "current": forecast.co2_forecast.current_value,
-                    "predicted": forecast.co2_forecast.predicted_value,
-                    "lower": forecast.co2_forecast.lower_bound,
-                    "upper": forecast.co2_forecast.upper_bound,
-                    "trend": forecast.co2_forecast.trend_direction,
-                    "method": forecast.co2_forecast.method,
-                }
-                if forecast.co2_forecast
-                else None
-            ),
-            "occupancy": (
-                {
-                    "current": forecast.occupancy_forecast.current_value,
-                    "predicted": forecast.occupancy_forecast.predicted_value,
-                    "lower": forecast.occupancy_forecast.lower_bound,
-                    "upper": forecast.occupancy_forecast.upper_bound,
-                    "trend": forecast.occupancy_forecast.trend_direction,
-                    "method": forecast.occupancy_forecast.method,
-                }
-                if forecast.occupancy_forecast
-                else None
-            ),
-        }
-    finally:
-        db.close()
-
-
 class CounterfactualRequest(BaseModel):
     interventions: list[dict[str, Any]] = Field(
         ...,
@@ -415,120 +323,6 @@ def counterfactual_analysis(req: CounterfactualRequest) -> dict[str, Any]:
         db.close()
 
 
-@router.get("/rca/{object_id}")
-def root_cause_analysis(object_id: str) -> dict[str, Any]:
-    """Root-Cause Analysis для останньої аномалії об'єкта."""
-    from app.ml.monitoring.anomaly import get_anomaly_detector
-    from app.ml.monitoring.rca import get_rca
-    from app.ml.monitoring.rca import ANOMALY_HISTORY_PATH
-    import json
-
-    if not ANOMALY_HISTORY_PATH.exists():
-        return {"status": "no_history", "message": "No anomalies recorded yet"}
-
-    # Find most recent anomaly for this object
-    last_anomaly = None
-    with ANOMALY_HISTORY_PATH.open() as f:
-        for line in f:
-            if line.strip():
-                try:
-                    d = json.loads(line)
-                    if d.get("object_id") == object_id:
-                        from app.ml.monitoring.anomaly import AnomalyScore
-
-                        last_anomaly = AnomalyScore(
-                            object_id=d["object_id"],
-                            timestamp=d["timestamp"],
-                            score=d["score"],
-                            is_anomaly=True,
-                            feature_values=d.get("feature_values", {}),
-                        )
-                except Exception:
-                    continue
-
-    if last_anomaly is None:
-        return {"status": "no_anomaly", "message": f"No anomalies for {object_id}"}
-
-    # Compute z-scores
-    feature_values = last_anomaly.feature_values
-    detector = get_anomaly_detector()
-    z_scores: dict[str, float] = {}
-    if detector._feature_means is not None and detector._feature_stds is not None:
-        for name, val in feature_values.items():
-            try:
-                idx = next(
-                    i
-                    for i, n in enumerate(
-                        __import__(
-                            "app.ml.features", fromlist=["FEATURE_NAMES"]
-                        ).FEATURE_NAMES
-                    )
-                    if n == name
-                )
-                z = (val - detector._feature_means[idx]) / detector._feature_stds[idx]
-                z_scores[name] = round(float(z), 2)
-            except Exception:
-                pass
-
-    rca = get_rca()
-    analysis = rca.analyze(last_anomaly, feature_values, z_scores)
-
-    return {
-        "object_id": analysis.object_id,
-        "timestamp": analysis.timestamp,
-        "anomaly_score": analysis.anomaly_score,
-        "primary_cause": analysis.primary_cause,
-        "is_recurring": analysis.is_recurring,
-        "similar_anomalies_last_24h": analysis.similar_anomalies_last_24h,
-        "feature_deviations": analysis.feature_deviations,
-        "root_causes": [
-            {
-                "cause": h.cause,
-                "confidence": h.confidence,
-                "evidence": h.evidence,
-                "recommended_action": h.recommended_action,
-            }
-            for h in analysis.root_causes
-        ],
-        "recommended_action": analysis.recommended_action,
-    }
-
-
-@router.post("/ensemble/train")
-def train_ensemble_endpoint(background: BackgroundTasks) -> dict[str, Any]:
-    """Тренує multi-model ensemble (RF + XGBoost + LightGBM)."""
-    job_id = str(uuid.uuid4())
-
-    def _train() -> None:
-        from app.ml.ensemble import train_ensemble
-
-        try:
-            train_ensemble()
-        except Exception as e:
-            logger.exception("Ensemble training failed: %s", e)
-
-    background.add_task(_train)
-    return {"status": "scheduled", "job_id": job_id}
-
-
-@router.get("/ensemble/predict")
-def ensemble_predict(features: list[float]) -> dict[str, Any]:
-    """Прогноз через ensemble (13 features)."""
-    from app.ml.features import FEATURE_NAMES, ScoreFeatures
-    from app.ml.ensemble import predict_ensemble
-
-    if len(features) != len(FEATURE_NAMES):
-        raise HTTPException(400, f"Expected {len(FEATURE_NAMES)} features")
-
-    feature_dict = dict(zip(FEATURE_NAMES, features))
-    try:
-        sf = ScoreFeatures(**feature_dict)
-    except Exception as e:
-        raise HTTPException(400, f"Invalid features: {e}")
-
-    return predict_ensemble(sf)
-
-
 @router.get("/model-cards")
 def list_model_cards() -> dict[str, Any]:
     """Список усіх model cards."""
@@ -553,23 +347,8 @@ def get_model_card_endpoint(model_name: str) -> dict[str, Any]:
     return card.to_dict()
 
 
-@router.get("/async/status")
-def async_status() -> dict[str, Any]:
-    """Статус async inference worker."""
-    from app.ml.async_inference import CONFIG, is_async_available
-
-    return {
-        "enabled": CONFIG.enabled,
-        "available": is_async_available(),
-        "redis_url": CONFIG.redis_url,
-        "queue_name": CONFIG.queue_name,
-        "max_jobs": CONFIG.max_jobs,
-        "job_timeout_sec": CONFIG.job_timeout_sec,
-    }
-
-
 # ─────────────────────────────────────────────────────────────────────
-# P4 Endpoints: online learning, concept drift, bandit, MLflow, benchmarks
+# Online learning
 # ─────────────────────────────────────────────────────────────────────
 @router.get("/online/status")
 def online_learning_status() -> dict[str, Any]:
@@ -614,180 +393,6 @@ def online_reset() -> dict[str, Any]:
     scorer = get_online_scorer()
     scorer.reset()
     return {"status": "reset", "message": "Online learner reset to cold start"}
-
-
-@router.get("/concept-drift/status")
-def concept_drift_status() -> dict[str, Any]:
-    """Стан concept drift monitor (ADWIN + Page-Hinkley + DDM)."""
-    from app.ml.monitoring.concept_drift import get_concept_drift_monitor
-
-    monitor = get_concept_drift_monitor()
-    return monitor.health()
-
-
-class ConceptDriftObserveRequest(BaseModel):
-    error: float = Field(..., description="Prediction error (MAE)")
-
-
-@router.post("/concept-drift/observe")
-def concept_drift_observe(req: ConceptDriftObserveRequest) -> dict[str, Any]:
-    """Додає помилку в concept drift monitor."""
-    from app.ml.monitoring.concept_drift import get_concept_drift_monitor
-
-    monitor = get_concept_drift_monitor()
-    event = monitor.add(req.error)
-    return {
-        "drift_detected": event is not None,
-        "event": (
-            {
-                "timestamp": event.timestamp,
-                "detector": event.detector,
-                "metric_before": event.metric_before,
-                "metric_after": event.metric_after,
-                "confidence": event.confidence,
-                "recommended_action": event.recommended_action,
-            }
-            if event
-            else None
-        ),
-        "monitor_state": monitor.health(),
-    }
-
-
-@router.post("/concept-drift/reset")
-def concept_drift_reset() -> dict[str, Any]:
-    """Reset concept drift monitor."""
-    from app.ml.monitoring.concept_drift import (
-        get_concept_drift_monitor,
-    )
-    import app.ml.monitoring.concept_drift as cd_module
-
-    cd_module._global_monitor = None
-    return {"status": "reset"}
-
-
-@router.get("/bandit/state")
-def bandit_state() -> dict[str, Any]:
-    """Стан multi-armed bandit (resource allocation)."""
-    from app.ml.monitoring.bandit import get_bandit
-
-    bandit = get_bandit()
-    return bandit.get_state()
-
-
-class BanditRegisterRequest(BaseModel):
-    arm_id: str
-    resource_type: str
-    base_name: str
-
-
-@router.post("/bandit/register")
-def bandit_register(req: BanditRegisterRequest) -> dict[str, Any]:
-    """Зареєструвати новий arm."""
-    from app.ml.monitoring.bandit import get_bandit
-
-    bandit = get_bandit()
-    bandit.register_arm(req.arm_id, req.resource_type, req.base_name)
-    return {"status": "registered", "arm_id": req.arm_id}
-
-
-@router.get("/bandit/select")
-def bandit_select() -> dict[str, Any]:
-    """Обрати arm за поточною стратегією (UCB1/epsilon-greedy/Thompson)."""
-    from app.ml.monitoring.bandit import get_bandit
-
-    bandit = get_bandit()
-    arm = bandit.select_arm()
-    if arm is None:
-        return {"arm_id": None, "message": "No arms registered"}
-    return {"arm_id": arm}
-
-
-class BanditUpdateRequest(BaseModel):
-    arm_id: str
-    reward: float
-    success: bool
-
-
-@router.post("/bandit/update")
-def bandit_update(req: BanditUpdateRequest) -> dict[str, Any]:
-    """Оновити arm після outcome (reward, success)."""
-    from app.ml.monitoring.bandit import get_bandit
-
-    bandit = get_bandit()
-    bandit.update(req.arm_id, req.reward, req.success)
-    return {"status": "updated", "arm_id": req.arm_id}
-
-
-@router.post("/experiment/start")
-def experiment_start(req: dict[str, str]) -> dict[str, Any]:
-    """Почати MLflow experiment run."""
-    from app.ml.experiment_tracking import ExperimentTracker
-
-    run_name = req.get("run_name", f"run_{int(time.time())}")
-    tags = {k: v for k, v in req.items() if k != "run_name"}
-    tracker = ExperimentTracker()
-    run_id = tracker.start_run(run_name, tags=tags)
-    return {"run_id": run_id, "run_name": run_name}
-
-
-@router.post("/experiment/log")
-def experiment_log(req: dict[str, Any]) -> dict[str, Any]:
-    """Записати params/metrics в активний run."""
-    from app.ml.experiment_tracking import ExperimentTracker
-
-    tracker = ExperimentTracker()
-    if req.get("params"):
-        tracker.log_params(req["params"])
-    if req.get("metrics"):
-        tracker.log_metrics(req["metrics"])
-    if req.get("artifact_path"):
-        tracker.log_artifact(req["artifact_path"])
-    if req.get("tag_key") and req.get("tag_value"):
-        tracker.set_tag(req["tag_key"], req["tag_value"])
-    return {"status": "logged"}
-
-
-@router.post("/experiment/end")
-def experiment_end(req: dict[str, str]) -> dict[str, Any]:
-    """Закрити активний run."""
-    from app.ml.experiment_tracking import ExperimentTracker
-
-    status = req.get("status", "FINISHED")
-    tracker = ExperimentTracker()
-    tracker.end_run(status=status)
-    return {"status": "ended"}
-
-
-@router.get("/benchmark/run")
-def benchmark_run(model: str = "score_model", n_samples: int = 500) -> dict[str, Any]:
-    """Запустити performance benchmark на вказаній моделі."""
-    from app.ml.benchmark import PerformanceBenchmark
-    from app.ml.inference import _load_score, model_versions
-
-    versions = model_versions()
-    if model == "score_model":
-        artifact = _load_score()
-        regressor = artifact["regressor"]
-
-        def _pred(X: np.ndarray) -> np.ndarray:
-            return regressor.predict(X)
-
-        bench = PerformanceBenchmark(model, versions["score_model"])
-        result = bench.run(_pred, n_samples=n_samples, feature_dim=13)
-    else:
-        raise HTTPException(400, f"Unknown model: {model}")
-
-    return result.to_dict()
-
-
-@router.get("/benchmark/history")
-def benchmark_history(limit: int = 20) -> dict[str, Any]:
-    """Історія benchmarks."""
-    from app.ml.benchmark import get_benchmark_history
-
-    history = get_benchmark_history(limit=limit)
-    return {"n": len(history), "history": history}
 
 
 @router.post("/ab/start")

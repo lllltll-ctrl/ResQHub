@@ -32,7 +32,7 @@ class ModelCard:
     training_data: str
     features: list[str]
     target: str
-    metrics: dict[str, float]
+    metrics: dict[str, Any]
     limitations: list[str]
     ethical_considerations: list[str]
     created_at: float = field(default_factory=time.time)
@@ -48,13 +48,13 @@ class ModelCard:
 # Pre-defined model cards
 # ─────────────────────────────────────────────────────────────────────
 SCORE_MODEL_CARD = ModelCard(
-    model_name="Resilience Score Predictor",
+    model_name="Прогнозувач балу стійкості",
     model_version="1.0.0",
     model_type="regression",
     intended_use=(
-        "Прогнозує Resilience Score (0-100) для критичних об'єктів міста "
+        "Прогнозує Бал стійкості (0-100) для критичних об'єктів міста "
         "(укриття, лікарні, школи) на основі телеметрії. Використовується "
-        "для real-time моніторингу та пріоритизації ресурсів під час блекаутів."
+        "для моніторингу в реальному часі та пріоритизації ресурсів під час блекаутів."
     ),
     training_data=(
         "Синтетичний датасет 8000 прикладів з 4 сценаріями: NORMAL, "
@@ -65,19 +65,19 @@ SCORE_MODEL_CARD = ModelCard(
     features=[
         "battery_pct (0-100)",
         "battery_est_hours (0-72)",
-        "temp_c (-30 to 60)",
+        "temp_c (-30 до 60)",
         "co2_ppm (300-5000)",
         "occupancy_ratio (0-2)",
         "criticality (1-5)",
-        "has_generator (bool)",
-        "has_starlink (bool)",
-        "power_on (bool)",
-        "internet_on (bool)",
+        "has_generator (булево)",
+        "has_starlink (булево)",
+        "power_on (булево)",
+        "internet_on (булево)",
         "signal (0-4)",
         "humidity_pct (0-100)",
-        "generator_on (bool)",
+        "generator_on (булево)",
     ],
-    target="Resilience Score (0-100)",
+    target="Бал стійкості (0-100)",
     metrics={
         "rmse": 2.49,
         "mae": 1.79,
@@ -94,46 +94,46 @@ SCORE_MODEL_CARD = ModelCard(
         "Не включає зовнішні фактори (погода, свята, нічний час)",
     ],
     ethical_considerations=[
-        "Може вплинути на рішення про розподіл ресурсів — потребує human-in-the-loop",
-        "Synthetic data може мати biases проти реальних сценаріїв",
-        "Диспетчер має бачити SHAP explanations перед прийняттям рішень",
-        "Не має використовуватись для автоматичних рішень без human review",
+        "Може вплинути на рішення про розподіл ресурсів — потребує участі людини в контурі",
+        "Синтетичні дані можуть містити упередження проти реальних сценаріїв",
+        "Диспетчер має бачити SHAP-пояснення перед прийняттям рішень",
+        "Не має використовуватись для автоматичних рішень без людського контролю",
     ],
 )
 
 
 RANKER_MODEL_CARD = ModelCard(
-    model_name="Assignment Priority Ranker",
+    model_name="Ранкер пріоритету призначень",
     model_version="1.0.0",
     model_type="ranker",
     intended_use=(
         "Ранжує об'єкти за пріоритетом для призначення обмежених ресурсів "
-        "(генераторів, бригад, палива). Замінює hand-tuned зважену формулу."
+        "(генераторів, бригад, палива). Замінює ручну зважену формулу."
     ),
     training_data=(
         "Синтетичний датасет з 4000 прикладів у групах по 20 об'єктів. "
-        "Target — релевантність 0/1/2 на основі TTC та criticality."
+        "Цільова змінна — релевантність 0/1/2 на основі TTC та criticality."
     ),
     features=[
-        "current_score (0-100)",
-        "time_to_critical_min (хвилини)",
-        "criticality (1-5)",
-        "occupancy_ratio (0-2)",
-        "battery_pct (0-100)",
-        "has_generator (bool)",
-        "has_starlink (bool)",
-        "power_on (bool)",
-        "ttc_missing (bool)",
-        "status_severity (0-2)",
+        "current_score (поточний бал 0-100)",
+        "time_to_critical_min (хвилини до критики)",
+        "criticality (критичність 1-5)",
+        "occupancy_ratio (заповненість 0-2)",
+        "battery_pct (заряд 0-100)",
+        "has_generator (наявність генератора)",
+        "has_starlink (наявність Starlink)",
+        "power_on (живлення увімкнено)",
+        "ttc_missing (TTC відсутній)",
+        "status_severity (серйозність статусу 0-2)",
     ],
-    target="Relevance 0/1/2 (low/medium/high urgency)",
+    target="Релевантність 0/1/2 (низька/середня/висока терміновість)",
     metrics={
         "ndcg_at_5": 1.000,
         "ndcg_at_10": 0.999,
     },
     limitations=[
-        "Не враховує відстань від баз техніки (це робить VRP solver окремо)",
-        "Парні дані синтетичні, ranking може не відповідати реальним операційним пріоритетам",
+        "Не враховує відстань від баз техніки (це робить routing engine окремо)",
+        "Парні дані синтетичні, ранжування може не відповідати реальним операційним пріоритетам",
     ],
     ethical_considerations=[
         "Пріоритизація впливає на те, хто отримає допомогу першим — потребує публічного обговорення",
@@ -143,59 +143,59 @@ RANKER_MODEL_CARD = ModelCard(
 
 
 ANOMALY_MODEL_CARD = ModelCard(
-    model_name="Telemetry Anomaly Detector",
+    model_name="Детектор аномалій телеметрії",
     model_version="1.0.0",
     model_type="anomaly_detection",
     intended_use=(
-        "Виявляє аномальні telemetry readings (зламані сенсори, неможливі "
+        "Виявляє аномальні показники телеметрії (зламані сенсори, неможливі "
         "комбінації, outliers). Використовується для попередження про "
         "несправності обладнання."
     ),
-    training_data="2000 нормальних прикладів з training dataset",
+    training_data="2000 нормальних прикладів з навчального датасету",
     features=[
-        "Всі 13 фіч з score model",
+        "Усі 13 ознак з моделі балу",
     ],
-    target="Binary: is_anomaly (True/False)",
+    target="Бінарно: is_anomaly (Так/Ні)",
     metrics={
         "contamination": 0.05,
         "n_estimators": 200,
     },
     limitations=[
-        "Навчений на синтетичних 'нормальних' даних — може не знати про всі реальні anomaly patterns",
-        "Не розрізняє типи аномалій (для цього є Root Cause Analyzer)",
-        "При anomaly spike може бути 'cry wolf' ефект",
+        "Навчений на синтетичних 'нормальних' даних — може не знати про всі реальні патерни аномалій",
+        "Не розрізняє типи аномалій (для цього є аналізатор першопричин)",
+        "При сплеску аномалій може бути ефект 'хибних тривог'",
     ],
     ethical_considerations=[
-        "False positives можуть призвести до зайвих перевірок обладнання",
-        "False negatives можуть призвести до прийняття невалідних readings у ML score",
+        "Хибнопозитивні спрацювання можуть призвести до зайвих перевірок обладнання",
+        "Хибнонегативні — до прийняття невалідних показників у ML-балі",
     ],
 )
 
 
 DRIFT_DETECTOR_CARD = ModelCard(
-    model_name="Feature Drift Detector",
+    model_name="Детектор дрейфу ознак",
     model_version="1.0.0",
     model_type="drift_detection",
     intended_use=(
-        "Виявляє розбіжності між training distribution і live telemetry. "
-        "Використовується для early warning про model degradation."
+        "Виявляє розбіжності між навчальним розподілом і live-телеметрією. "
+        "Використовується для раннього попередження про деградацію моделі."
     ),
-    training_data="2000 reference samples з training dataset",
+    training_data="2000 референтних зразків з навчального датасету",
     features=[
-        "Всі 13 фіч з score model",
+        "Усі 13 ознак з моделі балу",
     ],
-    target="Drift score (KS statistic + p-value)",
+    target="Бал дрейфу (KS-статистика + p-value)",
     metrics={
-        "test": "Kolmogorov-Smirnov 2-sample",
+        "test": "Колмогорова-Смірнова 2-вибірковий",
         "threshold_p": 0.05,
         "window_size": 200,
     },
     limitations=[
-        "Не виявляє concept drift (зміну зв'язку між фіч і target)",
-        "Чутливий до розміру current window — при <30 observations може не спрацювати",
+        "Не виявляє концепт-дрейф (зміну зв'язку між ознаками та цільовою змінною)",
+        "Чутливий до розміру поточного вікна — при <30 спостереженнях може не спрацювати",
     ],
     ethical_considerations=[
-        "Drift detection має спрацьовувати швидко, щоб уникнути прийняття поганих рішень",
+        "Виявлення дрейфу має спрацьовувати швидко, щоб уникнути прийняття поганих рішень",
     ],
 )
 

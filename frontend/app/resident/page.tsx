@@ -1,19 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RealtimeProvider } from "@/components/RealtimeProvider";
 import { api } from "@/lib/api";
 import type { PublicObject, StatusT } from "@/lib/types";
 import Link from "next/link";
 import { ResidentMap } from "@/components/ResidentMap";
 import { StatusPill } from "@/components/ui/StatusPill";
 
+// Сторінка мешканця самодостатня: тягне лише /api/public/objects.
+// Раніше була обгорнута в RealtimeProvider, який на кожному вході робив
+// 6 зайвих запитів (dashboard, dashboardFull, routing, events…) і відкривав
+// WebSocket — саме це гальмувало завантаження. Публічному екрану це не треба.
 export default function ResidentPage() {
-  return (
-    <RealtimeProvider>
-      <ResidentShell />
-    </RealtimeProvider>
-  );
+  return <ResidentShell />;
 }
 
 function ResidentShell() {

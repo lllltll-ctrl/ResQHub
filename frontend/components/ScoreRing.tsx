@@ -14,8 +14,9 @@ export function ScoreRing({
   const pct = Math.max(0, Math.min(100, score));
   const offset = c - (pct / 100) * c;
 
+  // Ті самі пороги/кольори, що й у StatusPill (globals.css chip-*)
   const color =
-    pct >= 70 ? "#2ECC71" : pct >= 40 ? "#F39C12" : "#E74C3C";
+    pct >= 70 ? "#4ae176" : pct >= 40 ? "#df7412" : "#ffb4ab";
 
   return (
     <svg width={size} height={size} className="block">

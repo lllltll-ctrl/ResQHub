@@ -21,6 +21,12 @@ class TelemetryPoint:
     battery_pct: float
     power_on: bool
     battery_est_hours: float = 24.0
+    generator_on: bool = False
+
+    @property
+    def powered(self) -> bool:
+        """Об'єкт має живлення: мережа АБО працюючий генератор."""
+        return self.power_on or self.generator_on
 
 
 @dataclass(frozen=True)
@@ -58,16 +64,16 @@ def forecast_time_to_critical(
 
     recent = points[-window_size:]
 
-    # Якщо живлення стабільне весь час — заряд не падає
-    if all(p.power_on for p in recent):
+    # Якщо живлення стабільне весь час (мережа або генератор) — заряд не падає
+    if all(p.powered for p in recent):
         return ForecastResult(
             time_to_critical_min=None, slope_pct_per_min=0.0, confidence=1.0
         )
 
     # Беремо останню точку (актуальний стан)
     last = recent[-1]
-    if last.power_on:
-        # Живлення відновилось, прогноз не потрібен
+    if last.powered:
+        # Живлення відновилось (мережа чи генератор), прогноз не потрібен
         return ForecastResult(
             time_to_critical_min=None, slope_pct_per_min=0.0, confidence=0.7
         )
@@ -86,7 +92,7 @@ def forecast_time_to_critical(
     delta_min = (delta_pct / 100.0) * est_hours * 60.0
 
     # Довіра: більше discharging точок = вища довіра
-    discharging_count = sum(1 for p in recent if not p.power_on)
+    discharging_count = sum(1 for p in recent if not p.powered)
     confidence = min(1.0, discharging_count / max(window_size, 4))
 
     return ForecastResult(

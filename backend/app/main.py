@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.ml_ops import router as ml_ops_router
-from app.api.routes import broadcast_event_loop, router
+from app.api.routes import broadcast_event_loop, router, set_main_event_loop
 from app.core.config import settings
 
 
@@ -21,6 +21,9 @@ from app.core.config import settings
 async def lifespan(app: FastAPI):
     import asyncio
 
+    # Зберігаємо main event loop, щоб sync-роути могли пушити WS-повідомлення
+    # через run_coroutine_threadsafe.
+    set_main_event_loop(asyncio.get_running_loop())
     task = asyncio.create_task(broadcast_event_loop())
     yield
     task.cancel()

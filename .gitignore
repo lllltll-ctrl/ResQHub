@@ -61,3 +61,13 @@ Thumbs.db
 final-*.png
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
+*.err
+*.out
+nul
+e2e-*-report.json
+e2e-*-shots/
+.playwright-mcp/
+.pytest_cache/
+backend/app/mlruns/

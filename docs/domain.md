@@ -20,7 +20,7 @@
 - `id`: UUID
 - `object_id`: FK → Object
 - `ts`: datetime (UTC)
-- `power_on`: bool (наявність електрики)
+- `power_on`: bool (наявність міської мережі; живлення від генератора — `generator_on`)
 - `battery_pct`: 0-100 (заряд батареї)
 - `battery_est_hours`: години автономної роботи за поточної витрат
 - `temp_c`: температура °C
@@ -91,7 +91,7 @@ STABLE (score ≥ 70) → WARNING (score 40-69) → CRITICAL (score < 40) → RE
 ## Демо-сценарій
 
 1. NORMAL — всі об'єкти green, score 80-95
-2. BLACKOUT (city-wide) — power_on=false для всіх, батарея зменшується, статус переходить у WARNING/CRITICAL
+2. BLACKOUT (city-wide) — power_on=false для всіх. Об'єкти з генератором рятує АВР (generator_on=true, живлення від пального). Об'єкти без генератора розряджають батарею зі швидкістю load_w/battery_capacity_wh → WARNING/CRITICAL у кожного у свій час
 3. Routing engine рекомендує направити генератор на 3 найбільш критичні об'єкти
 4. Admin робить assignment → статус RESCUE_IN_TRANSIT → через N хвилин battery зростає, score повертається
 5. Resident view показує оновлений список доступних пунктів

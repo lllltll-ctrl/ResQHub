@@ -14,7 +14,6 @@ from typing import Optional
 
 import numpy as np
 
-from app.ml.explain import explain_score
 from app.ml.features import ScoreFeatures
 from app.ml.inference import predict_score as ml_predict_score
 from app.models.domain import ScoreStatus
@@ -73,13 +72,14 @@ def compute_score(inp: ScoreInput) -> ScoreResult:
     """
     features = inp.to_features()
     prediction = ml_predict_score(features)
-    contributions = explain_score(features)
 
+    # SHAP-пояснення НЕ рахуємо на кожен тік телеметрії — це дорого (CPU/GIL)
+    # і гальмує читання під навантаженням симулятора. Пояснення потрібне лише
+    # на вимогу (брифінг оператора, counterfactual) і рахується там окремо.
     components = {
         "model_version": _model_version(),
         "ml_prediction_confidence": prediction.confidence,
         "ml_tree_spread": prediction.tree_spread,
-        "ml_feature_contributions": contributions,
         "ml_features_used": [
             "battery_pct",
             "battery_est_hours",

@@ -30,9 +30,6 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 
 export const api = {
   objects: () => getJson<CityObject[]>("/api/objects"),
-  objectsByDistrict: (district: string) =>
-    getJson<CityObject[]>(`/api/objects?district=${encodeURIComponent(district)}`),
-  object: (id: string) => getJson<CityObject>(`/api/objects/${id}`),
 
   dashboard: () => getJson<DashboardSummary>("/api/dashboard"),
   dashboardFull: () => getJson<ObjectState[]>("/api/dashboard/full"),
@@ -42,6 +39,8 @@ export const api = {
   assignments: () => getJson<Assignment[]>("/api/assignments"),
   createAssignment: (object_id: string, resource_type: string, eta_min = 30) =>
     postJson<Assignment>("/api/assignments", { object_id, resource_type, eta_min }),
+  completeAssignment: (id: string, outcome: "success" | "cancelled" = "success") =>
+    postJson<Assignment>(`/api/assignments/${id}/complete?outcome=${outcome}`, {}),
 
   startScenario: (type: string, scope = "CITY", target: string | null = null, intensity = 1.0) =>
     postJson<Scenario>("/api/scenarios", { type, scope, target, intensity }),
@@ -49,25 +48,6 @@ export const api = {
 
   events: (limit = 50) => getJson<BoltEvent[]>(`/api/events?limit=${limit}`),
 
-  briefing: (object_id: string, use_llm = false) =>
-    getJson<Briefing>(`/api/briefing/${object_id}?use_llm=${use_llm}`),
-
-  counterfactual: (
-    object_id: string,
-    intervention_type: string,
-    eta_min = 30,
-  ) =>
-    postJson<Counterfactual>(
-      `/api/counterfactual/${object_id}?intervention_type=${intervention_type}&eta_min=${eta_min}`,
-      {},
-    ),
-
-  modelCards: () => getJson<ModelCard[]>(`/api/models/cards`),
-  modelHealth: () => getJson<ModelHealth>(`/api/models/health`),
-  driftStatus: () => getJson<DriftStatus>(`/api/ml/drift`),
-
-  telemetry: (object_id: string, limit = 50) =>
-    getJson<unknown[]>(`/api/telemetry/${object_id}?limit=${limit}`),
   scores: (object_id: string, limit = 50) => getJson<Score[]>(`/api/scores/${object_id}?limit=${limit}`),
 
   publicObjects: (lat: number, lon: number, radius_m = 2000) =>

@@ -6,10 +6,26 @@ Pydantic v2 схеми (DTO) для API ResQHub.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from typing import Literal
+from datetime import datetime, timezone
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
+
+
+def _to_utc_iso(dt: datetime) -> str:
+    """Серіалізує datetime у ISO з таймзоною UTC.
+
+    SQLite зберігає час як naive-UTC (без tzinfo). Якщо віддати його клієнту
+    без 'Z'/offset, браузер трактує його як ЛОКАЛЬНИЙ → історія «зсувається»
+    на різницю з UTC (для України −2/−3 год). Тегуємо naive як UTC.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
+# datetime, який завжди серіалізується як UTC-aware ISO рядок.
+UtcDatetime = Annotated[datetime, PlainSerializer(_to_utc_iso, return_type=str)]
 
 # Note: використовуємо str замість Literal[...] для output-схем, бо SQLAlchemy
 # повертає Python Enum, який не валідується як Literal. Для input-схем Literal OK.
@@ -61,7 +77,7 @@ class ObjectOut(ORMBase):
     battery_capacity_wh: float
     has_generator: bool
     has_starlink: bool
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class TelemetryCreate(BaseModel):
@@ -82,7 +98,7 @@ class TelemetryCreate(BaseModel):
 class TelemetryOut(ORMBase):
     id: uuid.UUID
     object_id: uuid.UUID
-    ts: datetime
+    ts: UtcDatetime
     power_on: bool
     battery_pct: float
     battery_est_hours: float
@@ -98,7 +114,7 @@ class TelemetryOut(ORMBase):
 class ScoreOut(ORMBase):
     id: uuid.UUID
     object_id: uuid.UUID
-    ts: datetime
+    ts: UtcDatetime
     score: float = Field(ge=0, le=100)
     status: StatusT
     time_to_critical_min: float | None
@@ -118,8 +134,8 @@ class ScenarioOut(ORMBase):
     scope: ScenarioScopeOutT
     target: str | None
     intensity: float
-    started_at: datetime
-    ended_at: datetime | None
+    started_at: UtcDatetime
+    ended_at: UtcDatetime | None
     is_active: bool
 
 
@@ -137,12 +153,12 @@ class AssignmentOut(ORMBase):
     eta_min: int
     priority_score: float
     justification: str
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class EventOut(ORMBase):
     id: uuid.UUID
-    ts: datetime
+    ts: UtcDatetime
     object_id: uuid.UUID | None
     scenario_id: uuid.UUID | None
     type: str

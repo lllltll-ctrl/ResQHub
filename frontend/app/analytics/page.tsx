@@ -42,15 +42,18 @@ function AnalyticsShell() {
     async function load() {
       if (objects.length === 0) return;
       try {
-        const allScoresByTs: Record<string, number[]> = {};
+        // Бакетуємо бали ПО ХВИЛИНІ через ВСІ об'єкти. Раніше ключем був
+        // точний timestamp — а вони в об'єктів не збігаються, тож кожна
+        // «точка» була балом одного об'єкта → шумна беззмістовна крива.
+        // Тепер кожна точка = середній бал міста за цю хвилину.
+        const bucket: Record<number, number[]> = {};
         await Promise.all(
-          objects.slice(0, 6).map(async (o) => {
+          objects.map(async (o) => {
             try {
-              const scores = await api.scores(o.id, 30);
+              const scores = await api.scores(o.id, 60);
               for (const s of scores) {
-                const key = s.ts;
-                if (!allScoresByTs[key]) allScoresByTs[key] = [];
-                allScoresByTs[key].push(s.score);
+                const minute = Math.floor(new Date(s.ts).getTime() / 60000);
+                (bucket[minute] ??= []).push(s.score);
               }
             } catch {
               /* ignore */
@@ -58,9 +61,9 @@ function AnalyticsShell() {
           }),
         );
         if (cancelled) return;
-        const data: HistoricalData[] = Object.entries(allScoresByTs)
-          .map(([ts, scores]) => ({
-            t: new Date(ts),
+        const data: HistoricalData[] = Object.entries(bucket)
+          .map(([minute, scores]) => ({
+            t: new Date(Number(minute) * 60000),
             value: scores.reduce((a, b) => a + b, 0) / scores.length,
           }))
           .sort((a, b) => a.t.getTime() - b.t.getTime())
@@ -89,7 +92,9 @@ function AnalyticsShell() {
       .map((o) => o.score?.time_to_critical_min)
       .filter((t): t is number => t != null && t > 0);
     const minTtc = ttcs.length > 0 ? Math.min(...ttcs) : null;
-    const powerOnCount = objs.filter((o) => o.telemetry?.power_on).length;
+    const powerOnCount = objs.filter(
+      (o) => o.telemetry?.power_on || o.telemetry?.generator_on
+    ).length;
     return {
       district: d,
       avg: Math.round(avg),
@@ -107,8 +112,14 @@ function AnalyticsShell() {
   const rescuePercent = ((summary?.rescue_in_transit ?? 0) / Math.max(1, summary?.total_objects ?? 10)) * 100;
 
   // Реальні метрики доступності замість хардкоду
+  // «З живленням» = мережа або працюючий генератор
   const powerOnlinePct = objects.length > 0
-    ? Math.round((objects.filter((o) => o.telemetry?.power_on).length / objects.length) * 100)
+    ? Math.round(
+        (objects.filter((o) => o.telemetry?.power_on || o.telemetry?.generator_on)
+          .length /
+          objects.length) *
+          100
+      )
     : 0;
   const internetOnlinePct = objects.length > 0
     ? Math.round((objects.filter((o) => o.telemetry?.internet_on).length / objects.length) * 100)
@@ -201,10 +212,22 @@ function AnalyticsShell() {
 
         {/* Trend chart */}
         <div className="glass-card rounded-xl p-[24px] mb-8">
-          <div className="flex justify-between items-center mb-6 border-b border-outline-variant/20 pb-4">
-            <div className="flex items-center gap-3">
-              <i className="material-symbols-outlined text-primary">timeline</i>
-              <h3 className="text-[20px] font-semibold text-on-surface">Динаміка індексу стійкості</h3>
+          <div className="flex justify-between items-start mb-6 border-b border-outline-variant/20 pb-4">
+            <div className="flex items-start gap-3">
+              <i className="material-symbols-outlined text-primary mt-1">timeline</i>
+              <div>
+                <h3 className="text-[20px] font-semibold text-on-surface">Динаміка індексу стійкості міста</h3>
+                <p className="text-[13px] text-on-surface-variant mt-1 max-w-xl">
+                  Середній бал усіх об'єктів по хвилинах. Падіння лінії = блекаут або
+                  деградація, підйом = відновлення й прибуття ресурсів.
+                </p>
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <div className="font-mono text-[28px] font-bold text-primary leading-none">
+                {Math.round(summary?.avg_city_score ?? 0)}
+              </div>
+              <div className="text-[11px] uppercase tracking-wider text-on-surface-variant mt-1">зараз</div>
             </div>
           </div>
           <div className="h-64 w-full relative bg-surface-dim/30 rounded-lg border border-outline-variant/10 overflow-hidden">
@@ -254,15 +277,32 @@ function AnalyticsShell() {
                 </>
               )}
             </svg>
-            <div className="absolute top-3 left-3 font-mono text-xs text-on-surface-variant">Індекс стійкості</div>
-            <div className="absolute bottom-3 right-3 font-mono text-xs text-primary font-bold">
-              ЗАРАЗ: {Math.round(summary?.avg_city_score ?? 0)}
-            </div>
+            {/* Y-axis scale labels */}
+            <div className="absolute text-[10px] text-on-surface-variant font-mono" style={{ top: '2px', right: '6px' }}>100</div>
+            <div className="absolute text-[10px] text-secondary font-mono" style={{ top: 'calc(30% - 14px)', left: '4px' }}>Стабільно (70)</div>
+            <div className="absolute text-[10px] text-tertiary font-mono" style={{ top: 'calc(60% - 14px)', left: '4px' }}>Увага (40)</div>
+            <div className="absolute text-[10px] text-on-surface-variant font-mono" style={{ bottom: '2px', right: '6px' }}>0</div>
 
-            {/* Reference labels */}
-            <div className="absolute text-[10px] text-secondary font-mono" style={{ top: 'calc(30% - 14px)', left: '4px' }}>Стабільно (70+)</div>
-            <div className="absolute text-[10px] text-tertiary font-mono" style={{ top: 'calc(60% - 14px)', left: '4px' }}>Увага (40+)</div>
+            {/* Empty state — поки немає історії */}
+            {forecast.length <= 1 && (
+              <div className="absolute inset-0 flex items-center justify-center text-center px-6">
+                <div className="text-on-surface-variant text-[13px]">
+                  <i className="material-symbols-outlined text-[28px] opacity-40 block mb-1">timeline</i>
+                  Збираємо телеметрію… Графік з'явиться за хвилину роботи симулятора.<br/>
+                  Запусти блекаут — і лінія піде вниз у реальному часі.
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* X-axis time labels */}
+          {forecast.length > 1 && (
+            <div className="flex justify-between mt-2 px-1 font-mono text-[10px] text-on-surface-variant">
+              <span>{forecast[0].t.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span>
+              <span>{forecast[Math.floor(forecast.length / 2)].t.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span>
+              <span>{forecast[forecast.length - 1].t.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span>
+            </div>
+          )}
         </div>
 
         {/* Split row */}

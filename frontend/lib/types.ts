@@ -97,6 +97,7 @@ export interface Assignment {
   priority_score: number;
   justification: string;
   created_at: string;
+  arrived_at: string | null;
 }
 
 export interface Scenario {
@@ -138,6 +139,7 @@ export interface PublicObject {
 export interface WsSnapshot {
   type: "snapshot";
   summary: DashboardSummary;
+  assignments?: Assignment[];
   objects: Array<{
     id: string;
     name: string;

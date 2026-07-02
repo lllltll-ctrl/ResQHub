@@ -104,6 +104,14 @@ class AnomalyDetector:
                 n_jobs=-1,
             )
             self._model.fit(X_norm)
+
+            # Авто-калібрування threshold: 1-й перцентиль decision_function
+            # decision_function: вище = нормальніше, нижче = аномальніше.
+            # Беремо 1-й перцентиль як поріг "точно аномалія" — щоб уникнути
+            # хибних спрацьовувань для нормальних спостережень.
+            ref_scores = self._model.decision_function(X_norm)
+            self._threshold = float(np.percentile(ref_scores, 1.0))
+
             save_artifact(
                 ANOMALY_MODEL_NAME,
                 {
@@ -115,8 +123,10 @@ class AnomalyDetector:
                 },
             )
             logger.info(
-                "Anomaly detector trained on %d samples, %d features",
+                "Anomaly detector trained on %d samples, %d features, threshold=%.4f",
                 X.shape[0],
+                X.shape[1],
+                self._threshold,
                 X.shape[1],
             )
 
@@ -206,13 +216,33 @@ class AnomalyDetector:
 def _explain_anomaly(
     x: np.ndarray, is_anomaly: bool, top_features: list[tuple[str, float]]
 ) -> str:
-    """Генерує людино-читабельне пояснення аномалії."""
+    """Генерує людино-читабельне пояснення аномалії українською."""
     if not is_anomaly:
         return ""
+    _FEATURE_UA = {
+        "battery_pct": "заряд батареї",
+        "battery_est_hours": "залишок автономності (год)",
+        "temp_c": "температура",
+        "co2_ppm": "рівень CO₂",
+        "occupancy_ratio": "заповненість",
+        "criticality": "критичність об'єкта",
+        "has_generator": "наявність генератора",
+        "has_starlink": "наявність Starlink",
+        "power_on": "живлення увімкнено",
+        "internet_on": "інтернет увімкнено",
+        "signal": "рівень сигналу",
+        "humidity_pct": "вологість",
+        "generator_on": "генератор працює",
+    }
     parts: list[str] = []
-    for name, val in top_features[:2]:
-        parts.append(f"{name}={val:.1f}")
-    return "Anomalous reading: " + ", ".join(parts)
+    for name, val in top_features[:3]:
+        pretty = _FEATURE_UA.get(name, name)
+        parts.append(f"{pretty} = {val:.1f}")
+    return (
+        "Показники сенсорів суттєво відхиляються від очікуваного діапазону: "
+        + "; ".join(parts)
+        + ". Можливі причини: несправність сенсора, зовнішнє втручання або неочікувана подія."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────

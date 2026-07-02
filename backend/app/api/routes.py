@@ -26,6 +26,18 @@ import json
 import uuid
 from collections.abc import AsyncGenerator
 
+
+# Глобальний event loop, що використовується broadcast_event_loop.
+# Зберігається при першому запуску додатку, щоб sync-роути могли
+# пушити повідомлення через run_coroutine_threadsafe.
+_main_event_loop: asyncio.AbstractEventLoop | None = None
+
+
+def set_main_event_loop(loop: asyncio.AbstractEventLoop) -> None:
+    global _main_event_loop
+    _main_event_loop = loop
+
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -50,11 +62,51 @@ from app.schemas import (
     ScenarioOut,
     TelemetryCreate,
     TelemetryOut,
+    _to_utc_iso,
 )
 from app.services import orchestrator
 
 router = APIRouter(prefix="/api")
 public_router = APIRouter(prefix="/public")
+
+
+def _assignment_event_payload(a) -> dict:
+    """Серіалізує Assignment для WS broadcast."""
+    return {
+        "id": str(a.id),
+        "object_id": str(a.object_id),
+        "resource_type": a.resource_type.value
+        if hasattr(a.resource_type, "value")
+        else str(a.resource_type),
+        "status": a.status.value if hasattr(a.status, "value") else str(a.status),
+        "eta_min": a.eta_min,
+        "created_at": _to_utc_iso(a.created_at) if a.created_at else None,
+        "arrived_at": _to_utc_iso(a.arrived_at) if a.arrived_at else None,
+    }
+
+
+def _scenario_event_payload(s) -> dict | None:
+    """Серіалізує Scenario для WS broadcast. None → null."""
+    if s is None:
+        return None
+    return {
+        "id": str(s.id),
+        "type": s.type.value if hasattr(s.type, "value") else str(s.type),
+        "scope": s.scope.value if hasattr(s.scope, "value") else str(s.scope),
+        "target": s.target,
+        "intensity": s.intensity,
+        "started_at": _to_utc_iso(s.started_at) if s.started_at else None,
+        "ended_at": _to_utc_iso(s.ended_at) if s.ended_at else None,
+        "is_active": s.is_active,
+    }
+
+
+def _schedule_broadcast(message: dict) -> None:
+    """Планує WS-broadcast із sync-роуту. Використовує збережений main loop,
+    бо sync-роут виконується в threadpool без asyncio loop."""
+    if _main_event_loop is None:
+        return
+    asyncio.run_coroutine_threadsafe(manager.broadcast(message), _main_event_loop)
 
 
 # ---------- Objects ----------
@@ -120,7 +172,7 @@ def list_scores(object_id: uuid.UUID, db: Session = Depends(get_db), limit: int 
         {
             "id": str(r.id),
             "object_id": str(r.object_id),
-            "ts": r.ts.isoformat(),
+            "ts": _to_utc_iso(r.ts),
             "score": r.score,
             "status": r.status.value,
             "time_to_critical_min": r.time_to_critical_min,
@@ -170,7 +222,7 @@ def dashboard_full(db: Session = Depends(get_db)):
                         "internet_on": t.internet_on,
                         "occupancy": t.occupancy,
                         "generator_on": t.generator_on,
-                        "ts": t.ts.isoformat(),
+                        "ts": _to_utc_iso(t.ts),
                     }
                     if t
                     else None
@@ -181,7 +233,7 @@ def dashboard_full(db: Session = Depends(get_db)):
                         "status": s.status.value,
                         "time_to_critical_min": s.time_to_critical_min,
                         "components": s.components,
-                        "ts": s.ts.isoformat(),
+                        "ts": _to_utc_iso(s.ts),
                     }
                     if s
                     else None
@@ -203,7 +255,10 @@ def routing(db: Session = Depends(get_db), limit: int = 5):
 )
 def post_assignment(payload: AssignmentCreate, db: Session = Depends(get_db)):
     try:
-        return orchestrator.create_assignment(db, payload)
+        a = orchestrator.create_assignment(db, payload)
+        # Миттєвий broadcast — UI не має чекати 3с
+        _schedule_broadcast(_assignment_event_payload(a))
+        return a
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
 
@@ -213,12 +268,43 @@ def list_assignments(db: Session = Depends(get_db)):
     return orchestrator.get_active_assignments(db)
 
 
+@router.post("/assignments/{assignment_id}/complete", response_model=AssignmentOut)
+def complete_assignment(
+    assignment_id: uuid.UUID,
+    outcome: str = "success",
+    db: Session = Depends(get_db),
+):
+    """Завершує призначення: повертає об'єкт у нормальний режим.
+
+    Викликається з UI після того, як машина "приїхала" на об'єкт (після eta_min).
+    Застосовує ефект ресурсу до telemetry та генерує подію прибуття.
+    """
+    if outcome not in {"success", "cancelled"}:
+        raise HTTPException(400, "outcome must be 'success' or 'cancelled'")
+    a = orchestrator.complete_assignment(db, assignment_id, outcome=outcome)
+    if a is None:
+        raise HTTPException(404, "Assignment not found")
+    _schedule_broadcast(_assignment_event_payload(a))
+    return a
+
+
 # ---------- Scenarios ----------
 @router.post(
     "/scenarios", response_model=ScenarioOut | None, status_code=status.HTTP_201_CREATED
 )
 def post_scenario(payload: ScenarioCreate, db: Session = Depends(get_db)):
-    return orchestrator.start_scenario(db, payload)
+    sc = orchestrator.start_scenario(db, payload)
+    # Миттєвий broadcast — UI не чекає наступного 3с snapshot.
+    try:
+        from app.services.orchestrator import get_active_scenario
+
+        active = get_active_scenario(db) if sc is not None else None
+    except Exception:
+        active = sc
+    _schedule_broadcast(
+        {"type": "scenario_change", "scenario": _scenario_event_payload(active)}
+    )
+    return sc
 
 
 @router.get("/scenarios/active", response_model=ScenarioOut | None)
@@ -396,9 +482,13 @@ async def broadcast_event_loop() -> AsyncGenerator[None, None]:
         try:
             summary = orchestrator.get_dashboard_summary(db)
             objects_state = orchestrator.get_objects_with_state(db)
+            active_assignments = orchestrator.get_active_assignments(db)
             snapshot = {
                 "type": "snapshot",
                 "summary": summary,
+                "assignments": [
+                    _assignment_event_payload(a) for a in active_assignments
+                ],
                 "objects": [
                     {
                         "id": str(row["object"].id),
@@ -417,7 +507,7 @@ async def broadcast_event_loop() -> AsyncGenerator[None, None]:
                         if row["telemetry"]
                         else 0,
                         "ts": (
-                            row["telemetry"].ts.isoformat()
+                            _to_utc_iso(row["telemetry"].ts)
                             if row["telemetry"]
                             else None
                         ),
@@ -443,7 +533,7 @@ async def broadcast_event_loop() -> AsyncGenerator[None, None]:
                                 "type": "event",
                                 "event": {
                                     "id": str(ev.id),
-                                    "ts": ev.ts.isoformat(),
+                                    "ts": _to_utc_iso(ev.ts),
                                     "object_id": str(ev.object_id)
                                     if ev.object_id
                                     else None,

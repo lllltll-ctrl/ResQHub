@@ -30,6 +30,7 @@ from app.models.domain import (
     EventSeverity,
     EventType,
     Object,
+    ResourceType,
     Score,
     ScoreStatus,
     Scenario,
@@ -62,6 +63,37 @@ logger = logging.getLogger(__name__)
 
 TELEMETRY_HISTORY_FOR_FORECAST = 24
 TOP_ROUTING_LIMIT = 5
+
+# ── Модель енергоспоживання ─────────────────────────────────────────
+# Базове навантаження об'єкта (Вт) за типом + споживання на людину.
+# Автономність = battery_capacity_wh * pct / load — тому кожен об'єкт
+# входить у блекаут зі СВОЄЮ швидкістю деградації, а не з магічною
+# константою для всіх.
+_BASE_LOAD_W = {
+    "HOSPITAL": 4000.0,
+    "FIRE_STATION": 1500.0,
+    "SCHOOL": 800.0,
+    "SHELTER": 600.0,
+    "RESILIENCE_POINT": 400.0,
+}
+_LOAD_PER_PERSON_W = 25.0
+
+# Запас пального стаціонарного генератора (год) за типом об'єкта.
+_GENERATOR_FUEL_HOURS = {
+    "HOSPITAL": 48.0,
+    "FIRE_STATION": 24.0,
+    "RESILIENCE_POINT": 12.0,
+    "SHELTER": 8.0,
+    "SCHOOL": 8.0,
+}
+
+
+def estimate_backup_hours(obj: Object, battery_pct: float, occupancy: int) -> float:
+    """Реальна автономність батареї (год) з поточним навантаженням."""
+    base = _BASE_LOAD_W.get(obj.type.value, 800.0)
+    load_w = base + occupancy * _LOAD_PER_PERSON_W
+    energy_wh = obj.battery_capacity_wh * max(0.0, battery_pct) / 100.0
+    return round(energy_wh / max(load_w, 1.0), 2)
 
 _RESOURCE_TYPE_UA = {
     "GENERATOR": "Генератор",
@@ -112,31 +144,6 @@ def get_object(db: Session, object_id: uuid.UUID) -> Object | None:
     return db.get(Object, object_id)
 
 
-def _build_features_from_telemetry(payload: TelemetryCreate, obj: Object) -> np.ndarray:
-    """Конвертує TelemetryCreate + Object у 13D feature vector для ML моделей."""
-    from app.ml.features import FEATURE_NAMES
-
-    occ_ratio = (payload.occupancy / obj.capacity) if obj.capacity > 0 else 0.0
-    return np.array(
-        [
-            payload.battery_pct,
-            payload.battery_est_hours,
-            payload.temp_c,
-            payload.co2_ppm,
-            occ_ratio,
-            float(obj.criticality),
-            float(obj.has_generator),
-            float(obj.has_starlink),
-            float(payload.power_on),
-            float(payload.internet_on),
-            float(payload.signal),
-            payload.humidity_pct,
-            float(payload.generator_on),
-        ],
-        dtype=np.float64,
-    )
-
-
 def ingest_telemetry(db: Session, payload: TelemetryCreate) -> Telemetry:
     """Зберігає телеметрію, рахує score + forecast, зберігає score."""
     obj = db.get(Object, payload.object_id)
@@ -179,37 +186,21 @@ def ingest_telemetry(db: Session, payload: TelemetryCreate) -> Telemetry:
         )
     )
 
-    # P2: Anomaly detection — soft warning, не блокує
-    anomaly_score = None
-    feature_vector = _build_features_from_telemetry(payload, obj)
-    try:
-        from app.ml.monitoring.anomaly import get_anomaly_detector
-
-        detector = get_anomaly_detector()
-        anomaly_score = detector.score(str(payload.object_id), feature_vector)
-    except Exception as e:
-        logger.debug("Anomaly check skipped: %s", e)
-
-    # P2: Drift observation — накопичує дані для майбутнього drift check
-    try:
-        from app.ml.monitoring.drift import get_drift_detector
-
-        drift_det = get_drift_detector()
-        drift_det.observe(feature_vector)
-    except Exception as e:
-        logger.debug("Drift observation skipped: %s", e)
-
     forecast = _forecast_for_object(db, payload.object_id)
 
     status = score_result.status
     # Якщо батарея ось-ось розрядиться (<60 хв), status піднімаємо до CRITICAL,
     # навіть якщо score ще "пристойний". Бо score — це зріз, а ttc — прогноз.
     ttc = forecast.time_to_critical_min
-    if ttc is not None and ttc <= 0:
-        status = ScoreStatus.CRITICAL
-    elif ttc is not None and ttc < 30 and status == ScoreStatus.STABLE:
+    if ttc is not None and ttc < 30:
         status = ScoreStatus.CRITICAL
     elif ttc is not None and ttc < 60 and status == ScoreStatus.STABLE:
+        status = ScoreStatus.WARNING
+    # Втрата зв'язку — це операційна проблема (об'єкт "сліпий" для координації).
+    # Навіть якщо живлення в нормі, диспетчер має звернути увагу → щонайменше
+    # WARNING, щоб було видно потребу в Starlink.
+    powered = payload.power_on or payload.generator_on
+    if not payload.internet_on and powered and status == ScoreStatus.STABLE:
         status = ScoreStatus.WARNING
     if _has_active_assignment(db, payload.object_id):
         status = ScoreStatus.RESCUE_IN_TRANSIT
@@ -223,15 +214,6 @@ def ingest_telemetry(db: Session, payload: TelemetryCreate) -> Telemetry:
             **score_result.components,
             "forecast_slope_pct_per_min": forecast.slope_pct_per_min,
             "forecast_confidence": forecast.confidence,
-            **(
-                {
-                    "anomaly_score": anomaly_score.score,
-                    "anomaly_is_anomaly": anomaly_score.is_anomaly,
-                    "anomaly_reason": anomaly_score.reason,
-                }
-                if anomaly_score is not None
-                else {}
-            ),
         },
     )
     db.add(score)
@@ -258,6 +240,7 @@ def _forecast_for_object(db: Session, object_id: uuid.UUID) -> ForecastResult:
             battery_pct=r.battery_pct,
             power_on=r.power_on,
             battery_est_hours=r.battery_est_hours,
+            generator_on=r.generator_on,
         )
         for r in rows
     ]
@@ -356,7 +339,7 @@ def get_routing_recommendations(
 
     P1 refactor:
       - ML-ranker (LightGBM) замість hand-tuned формули для priority_score
-      - Capacity constraints: об'єкти з has_generator=True виключені
+      - Об'єкти з активним живленням (мережа/генератор) виключені
       - Batch telemetry/score queries (N+1 fix)
       - Haversine distance у routing_engine.optimize_generator_allocation
     """
@@ -421,8 +404,10 @@ def get_routing_recommendations(
         if last_s.status == ScoreStatus.STABLE and last_s.time_to_critical_min is None:
             continue
 
-        # CAPACITY CONSTRAINT: якщо вже є генератор — кандидат не розглядається
-        if obj.has_generator:
+        # Об'єкт з живленням (мережа або працюючий генератор) допомоги
+        # не потребує. Якщо генератор заглухне (пальне) — generator_on
+        # стане False і об'єкт знову з'явиться у кандидатах.
+        if last_t.power_on or last_t.generator_on:
             continue
 
         # ML-based priority через LightGBM ranker
@@ -555,6 +540,178 @@ def get_active_assignments(db: Session) -> list[Assignment]:
     return list(db.scalars(stmt))
 
 
+def complete_assignment(
+    db: Session, assignment_id: uuid.UUID, outcome: str = "success"
+) -> Optional[Assignment]:
+    """Завершує assignment: відмічає ARRIVED, логує event, застосовує ефект до об'єкта.
+
+    outcome:
+      - 'success' → ресурс спрацював, об'єкт повертається у звичайний режим
+      - 'cancelled' → ресурс відкликано
+    Після complete наступний telemetry-tick перерахує status поза RESCUE_IN_TRANSIT.
+    """
+    a = db.get(Assignment, assignment_id)
+    if a is None:
+        return None
+    if a.status == AssignmentStatus.ARRIVED:
+        return a
+    a.status = AssignmentStatus.ARRIVED
+    a.arrived_at = datetime.now(timezone.utc)
+
+    obj = db.get(Object, a.object_id)
+    if obj is None:
+        db.commit()
+        return a
+
+    resource_name = _RESOURCE_TYPE_UA.get(a.resource_type.value, a.resource_type.value)
+
+    if outcome == "success":
+        effect_msg = f"{resource_name} доставлено на {obj.name}."
+        last_t = get_latest_telemetry(db, obj.id)
+        if last_t is not None:
+            # Реалістичні ефекти ресурсів на об'єкт:
+            # - GENERATOR: бригада увімкнула генератор (якщо він є).
+            #   Живлення повертається, батарея заряджається.
+            # - BATTERY_BANK: підключено зовнішню батарею. Тимчасове живлення.
+            # - STARLINK: увімкнено термінал Starlink. Зв'язок відновлено.
+            # - FUEL: заправлено генератор (4 год роботи). Працює ТІЛЬКИ якщо
+            #   генератор увімкнений. Інакше — просто резерв пального.
+            # - TECH_TEAM: ремонтні роботи. Універсальний, відновлює все,
+            #   що можна відремонтувати.
+            if a.resource_type == ResourceType.GENERATOR:
+                # Мобільний генератор: після доставки об'єкт фактично має
+                # генератор — фіксуємо це, щоб ML-модель і маршрутизація
+                # бачили новий стан обладнання.
+                if not obj.has_generator:
+                    obj.has_generator = True
+                new_power = last_t.power_on  # мережа як була (грід не наш)
+                new_generator = True
+                new_battery = min(100.0, last_t.battery_pct + 30.0)
+                new_battery_hours = 48.0
+                effect_msg = (
+                    f"Генератор запущено на {obj.name}. "
+                    f"Живлення від генератора, батарея заряджається."
+                )
+            elif a.resource_type == ResourceType.BATTERY_BANK:
+                new_power = last_t.power_on  # мережу батарея не повертає
+                new_generator = last_t.generator_on
+                new_battery = min(100.0, last_t.battery_pct + 40.0)
+                new_battery_hours = 8.0
+                effect_msg = (
+                    f"Зовнішня батарея підключена до {obj.name}. "
+                    f"Тимчасове живлення на 8 год."
+                )
+            elif a.resource_type == ResourceType.STARLINK:
+                # Мобільний термінал Starlink працює на будь-якому об'єкті
+                if not obj.has_starlink:
+                    obj.has_starlink = True
+                new_power = last_t.power_on
+                new_generator = last_t.generator_on
+                new_battery = last_t.battery_pct
+                new_battery_hours = last_t.battery_est_hours
+                effect_msg = f"Starlink активовано на {obj.name}. Зв'язок відновлено."
+            elif a.resource_type == ResourceType.FUEL:
+                # Паливо має сенс тільки якщо на об'єкті є генератор.
+                if obj.has_generator:
+                    new_power = last_t.power_on
+                    new_generator = True  # заправили та (пере)запустили
+                    new_battery = min(100.0, last_t.battery_pct + 20.0)
+                    new_battery_hours = max(last_t.battery_est_hours, 8.0)
+                    effect_msg = (
+                        f"Паливо залито в генератор на {obj.name}. "
+                        f"Генератор працює, +8 годин роботи."
+                    )
+                else:
+                    new_power = last_t.power_on
+                    new_generator = False
+                    new_battery = last_t.battery_pct
+                    new_battery_hours = last_t.battery_est_hours
+                    effect_msg = (
+                        f"Паливо доставлено на {obj.name}, але генератора "
+                        f"там немає. Потрібен мобільний генератор."
+                    )
+            elif a.resource_type == ResourceType.TECH_TEAM:
+                # Техбригада усуває проблеми: запускає генератор, активує Starlink,
+                # знижує CO₂ завдяки вентиляції.
+                new_power = last_t.power_on
+                new_generator = obj.has_generator
+                new_battery = min(100.0, last_t.battery_pct + 15.0)
+                new_battery_hours = 24.0
+                effect_msg = (
+                    f"Техбригада провела ремонт на {obj.name}. "
+                    + (
+                        "Генератор увімкнено. "
+                        if obj.has_generator
+                        else "Живлення стабілізовано. "
+                    )
+                    + "Starlink активовано."
+                    if obj.has_starlink
+                    else ""
+                ).strip()
+            else:
+                new_power = last_t.power_on
+                new_generator = last_t.generator_on
+                new_battery = last_t.battery_pct
+                new_battery_hours = last_t.battery_est_hours
+                effect_msg = (
+                    f"{resource_name} доставлено на {obj.name}, але не може "
+                    f"бути застосований (об'єкт не має відповідного обладнання)."
+                )
+
+            new_payload = TelemetryCreate(
+                object_id=obj.id,
+                power_on=new_power,
+                battery_pct=new_battery,
+                battery_est_hours=new_battery_hours,
+                temp_c=last_t.temp_c,
+                humidity_pct=last_t.humidity_pct,
+                # CO₂ знижується, якщо увімкнений генератор (вентиляція) або
+                # приїхала техбригада
+                co2_ppm=max(
+                    400.0,
+                    last_t.co2_ppm - 200.0
+                    if a.resource_type
+                    in (ResourceType.TECH_TEAM, ResourceType.GENERATOR)
+                    else last_t.co2_ppm,
+                ),
+                signal=4
+                if a.resource_type in (ResourceType.STARLINK, ResourceType.TECH_TEAM)
+                and obj.has_starlink
+                else last_t.signal,
+                internet_on=(
+                    True
+                    if a.resource_type
+                    in (ResourceType.STARLINK, ResourceType.TECH_TEAM)
+                    and obj.has_starlink
+                    else last_t.internet_on
+                ),
+                occupancy=last_t.occupancy,
+                generator_on=new_generator,
+                scenario_id=last_t.scenario_id,
+            )
+            ingest_telemetry(db, new_payload)
+
+        event = Event(
+            object_id=obj.id,
+            type=EventType.MANUAL,
+            severity=EventSeverity.INFO,
+            message=effect_msg,
+        )
+        db.add(event)
+    else:
+        event = Event(
+            object_id=obj.id,
+            type=EventType.MANUAL,
+            severity=EventSeverity.WARNING,
+            message=f"{resource_name} скасовано для {obj.name}.",
+        )
+        db.add(event)
+
+    db.commit()
+    db.refresh(a)
+    return a
+
+
 def _has_active_assignment(db: Session, object_id: uuid.UUID) -> bool:
     stmt = (
         select(Assignment.id)
@@ -617,20 +774,24 @@ def _apply_scenario_immediately(db: Session, scenario: Scenario) -> None:
         base_occupancy = last_t.occupancy if last_t else 0
 
         if scenario.type in (ScenarioType.BLACKOUT, ScenarioType.PARTIAL_OUTAGE):
+            # Мережа зникає, але батарея НЕ обнуляється: кожен об'єкт входить
+            # у блекаут зі своїм поточним зарядом і власною автономністю.
+            power_on = False
             if obj.has_generator:
-                power_on = True
+                # АВР (автоматичний ввід резерву): стаціонарний генератор
+                # стартує сам, як у реальній лікарні. Такі об'єкти живуть
+                # на пальному і НЕ потребують негайного втручання.
                 generator_on = True
-                battery_pct = min(100.0, base_battery + 10.0 * scenario.intensity)
-                battery_est_hours = 96.0
-                internet_on = obj.has_starlink
-                signal = 2 if obj.has_starlink else 0
+                battery_pct = base_battery
+                battery_est_hours = _GENERATOR_FUEL_HOURS.get(obj.type.value, 8.0)
             else:
-                power_on = False
                 generator_on = False
-                battery_pct = max(0.0, base_battery - 25.0 * scenario.intensity)
-                battery_est_hours = 2.0
-                internet_on = obj.has_starlink
-                signal = 0
+                battery_pct = base_battery
+                battery_est_hours = estimate_backup_hours(
+                    obj, base_battery, base_occupancy
+                )
+            internet_on = obj.has_starlink
+            signal = 3 if obj.has_starlink else 1
         elif scenario.type == ScenarioType.SIGNAL_DOWN:
             power_on = last_t.power_on if last_t else True
             generator_on = last_t.generator_on if last_t else False
@@ -638,13 +799,17 @@ def _apply_scenario_immediately(db: Session, scenario: Scenario) -> None:
             battery_est_hours = last_t.battery_est_hours if last_t else 24.0
             internet_on = False
             signal = 0
-        elif scenario.type == ScenarioType.RESET:
+        elif scenario.type in (ScenarioType.RESET, ScenarioType.NORMAL):
             power_on = True
             generator_on = False
             battery_pct = 100.0
             battery_est_hours = 24.0
             internet_on = True
             signal = 4
+            base_temp = 21.0
+            base_co2 = max(450.0, base_co2 - 300.0)  # вентиляція запрацювала
+            base_humidity = 45.0
+            # Людей не «телепортуємо» — вони розходяться поступово (симулятор)
         else:
             continue
 
@@ -673,7 +838,8 @@ def start_scenario(db: Session, payload: ScenarioCreate) -> Scenario | None:
         {"is_active": False, "ended_at": datetime.now(timezone.utc)}
     )
 
-    # RESET = деактивація активних сценаріїв без створення нового рядка
+    # RESET = деактивація активних сценаріїв + застосування нормальних telemetry,
+    # без створення нового активного запису (бо нічого активного не залишається).
     if payload.type == ScenarioType.RESET:
         event = Event(
             type=EventType.SCENARIO_END,
@@ -681,7 +847,8 @@ def start_scenario(db: Session, payload: ScenarioCreate) -> Scenario | None:
             message="Сценарій скинуто. Повернення до нормального режиму.",
         )
         db.add(event)
-        # Повертаємо норму для всіх об'єктів
+        # Створюємо тимчасовий сценарій для _apply_scenario_immediately, але
+        # одразу деактивовуємо — щоб банер "Активний сценарій" зник.
         sc_reset = Scenario(
             type=ScenarioType.RESET,
             scope=payload.scope,
@@ -691,6 +858,8 @@ def start_scenario(db: Session, payload: ScenarioCreate) -> Scenario | None:
         db.add(sc_reset)
         db.flush()
         _apply_scenario_immediately(db, sc_reset)
+        sc_reset.is_active = False
+        sc_reset.ended_at = datetime.now(timezone.utc)
         db.commit()
         return None
 
@@ -828,12 +997,17 @@ def _ml_model_version() -> str:
 def get_public_objects(
     db: Session, lat: float, lon: float, radius_m: int = 2000
 ) -> list[dict]:
-    """Список доступних пунктів для мешканця (public view)."""
-    objects = get_objects(db)
+    """Список доступних пунктів для мешканця (public view).
+
+    Використовує batch-запит get_objects_with_state (без N+1), тому
+    сторінка мешканця відповідає за мілісекунди, а не 1-2 секунди.
+    """
+    rows = get_objects_with_state(db)
     out: list[dict] = []
-    for obj in objects:
-        last_s = get_latest_score(db, obj.id)
-        last_t = get_latest_telemetry(db, obj.id)
+    for row in rows:
+        obj = row["object"]
+        last_t = row["telemetry"]
+        last_s = row["score"]
         if last_t is None:
             continue
         status = last_s.status.value if last_s else "STABLE"
@@ -854,7 +1028,8 @@ def get_public_objects(
                 "lon": obj.lon,
                 "address": obj.address,
                 "status": status,
-                "power_on": last_t.power_on,
+                # Для мешканця «є світло» = мережа АБО працюючий генератор
+                "power_on": last_t.power_on or last_t.generator_on,
                 "internet_on": last_t.internet_on,
                 "occupancy": occupancy,
                 "capacity": obj.capacity,

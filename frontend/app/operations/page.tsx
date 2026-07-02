@@ -4,20 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { RealtimeProvider } from "@/components/RealtimeProvider";
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
-import { CityMap } from "@/components/CityMap";
+import { CityMap, type RescueVehicle } from "@/components/CityMap";
 import { RoutingPanel } from "@/components/RoutingPanel";
 import { EventLog } from "@/components/EventLog";
-import { ScoreRing } from "@/components/ScoreRing";
 import { StatCard } from "@/components/StatCard";
 import { ToastContainer, pushToast } from "@/components/Toast";
 import { HeaderActions } from "@/components/HeaderActions";
 import { StatusPill } from "@/components/ui/StatusPill";
-import { ShapBreakdown } from "@/components/SHAPBreakdown";
-import { OperatorBriefingPanel } from "@/components/OperatorBriefingPanel";
-import { CounterfactualPanel } from "@/components/CounterfactualPanel";
 import { RESOURCE_TYPE_UA, SCENARIO_TYPE_UA } from "@/lib/types";
 import Link from "next/link";
 import type { ObjectState, ResourceTypeT } from "@/lib/types";
+import { buildOperatorBrief } from "@/lib/recommendations";
 
 export default function OperationsPage() {
   return (
@@ -33,6 +30,7 @@ function OperationsShell() {
     summary,
     objects,
     routing,
+    assignments,
     activeScenario,
     selectedObjectId,
     setSelectedObjectId,
@@ -57,21 +55,137 @@ function OperationsShell() {
   }, [selectedObjectId, setSelectedObjectId]);
 
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
-  const [briefingObjectId, setBriefingObjectId] = useState<string | null>(null);
-  const [counterfactualObjectId, setCounterfactualObjectId] = useState<
-    string | null
-  >(null);
+
+  // Парк техніки міста мінус те, що зараз у дорозі (активні assignments)
+  const FLEET: Record<string, number> = {
+    GENERATOR: 3,
+    STARLINK: 2,
+    TECH_TEAM: 2,
+    BATTERY_BANK: 5,
+    FUEL: 8,
+  };
+  const availableResources = useMemo(() => {
+    const out: Record<string, number> = { ...FLEET };
+    for (const a of assignments) {
+      if (a.status === "DISPATCHED" || a.status === "REQUESTED") {
+        out[a.resource_type] = Math.max(0, (out[a.resource_type] ?? 0) - 1);
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignments]);
+
+
+  // Активні анімаційні машини на карті
+  const [vehicles, setVehicles] = useState<RescueVehicle[]>([]);
+  // Скорочуємо тривалість анімації для кращого UX (eta_min — це реальний ETA,
+  // а тривалість руху по карті — тільки візуалізація, 8с на виїзд + 5с на повернення).
+  const ANIM_OUT_MS = 8000;
+  const ANIM_BACK_MS = 5000;
+  const DEPOT: [number, number] = [50.255, 28.65];
+  const knownVehiclesRef = useRef<Set<string>>(new Set());
+
+  // Коли створюється нове assignment — додаємо vehicle "outbound".
+  useEffect(() => {
+    if (!assignments.length) return;
+    const known = knownVehiclesRef.current;
+    const fresh = assignments.filter((a) => !known.has(a.id) && a.status === "DISPATCHED");
+    if (!fresh.length) return;
+    const target = objects.find((o) => o.id === fresh[0].object_id);
+    if (!target) return;
+    fresh.forEach((a) => known.add(a.id));
+    const newVehicles: RescueVehicle[] = fresh.map((a) => {
+      // Проміжна точка — робимо маршрут не по прямій.
+      // Беремо середину між депо і обʼєктом + перпендикулярний зсув.
+      const midLat = (DEPOT[0] + target.lat) / 2;
+      const midLon = (DEPOT[1] + target.lon) / 2;
+      const dx = target.lon - DEPOT[1];
+      const dy = target.lat - DEPOT[0];
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      // Перпендикулярний вектор (-dy, dx), нормалізований
+      const perpLat = -dy / len;
+      const perpLon = dx / len;
+      // Зсув ~25% від довжини маршруту
+      const offset = len * 0.18;
+      const waypoint: [number, number] = [
+        midLat + perpLat * offset,
+        midLon + perpLon * offset,
+      ];
+
+      const startMs = performance.now();
+      const endMs = startMs + ANIM_OUT_MS;
+      return {
+        id: `out-${a.id}`,
+        from: DEPOT,
+        waypoint,
+        to: [target.lat, target.lon],
+        startMs,
+        endMs,
+        phase: "outbound" as const,
+        label: RESOURCE_TYPE_UA[a.resource_type] ?? a.resource_type,
+        onComplete: () => {
+          // Допомога ПРИБУЛА на об'єкт → застосовуємо ефект ОДРАЗУ.
+          // Об'єкт виходить зі стану "в дорозі" й відновлюється (стає
+          // зеленим). Раніше ефект чекав повернення машини на базу — через
+          // це об'єкт лишався фіолетовим і поруч «висіла» машинка.
+          api
+            .completeAssignment(a.id, "success")
+            .then(() => {
+              pushToast(
+                `${RESOURCE_TYPE_UA[a.resource_type] ?? "Ресурс"} прибув на ${target.name}. Об'єкт відновлюється.`,
+                "success",
+              );
+            })
+            .catch((err) => {
+              console.error("[completeAssignment] failed:", err);
+            });
+          // Косметика: машина повертається на базу (на статус не впливає).
+          const backId = `back-${a.id}`;
+          setVehicles((cur) => {
+            if (cur.some((v) => v.id === backId)) return cur;
+            return [
+              ...cur,
+              {
+                id: backId,
+                from: [target.lat, target.lon],
+                waypoint,
+                to: DEPOT,
+                startMs: performance.now(),
+                endMs: performance.now() + ANIM_BACK_MS,
+                phase: "inbound" as const,
+                label: "↩ на базу",
+                onComplete: () => {
+                  setVehicles((cur) => cur.filter((v) => v.id !== backId));
+                  known.delete(a.id);
+                },
+              },
+            ];
+          });
+        },
+      };
+    });
+    setVehicles((cur) => {
+      const existing = new Set(cur.map((v) => v.id));
+      const filtered = newVehicles.filter((v) => !existing.has(v.id));
+      return filtered.length ? [...cur, ...filtered] : cur;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignments, objects]);
 
   async function handleScenario(type: "BLACKOUT" | "RESET" | "SIGNAL_DOWN" | "PARTIAL_OUTAGE") {
     try {
-      await api.startScenario(type, "CITY", null, 1.0);
+      const sc = await api.startScenario(type, "CITY", null, 1.0);
       const names: Record<string, string> = {
         BLACKOUT: "Блекаут",
         RESET: "Скидання",
         SIGNAL_DOWN: "Зв'язок відсутній",
         PARTIAL_OUTAGE: "Часткове відключення",
       };
-      pushToast(`Сценарій «${names[type]}» запущено`, type === "RESET" ? "success" : "warning");
+      if (type === "RESET") {
+        pushToast("Скинуто: повернення до нормального режиму", "success");
+      } else if (sc) {
+        pushToast(`Сценарій «${names[type]}» активовано`, "warning");
+      }
     } catch (e) {
       console.error(e);
       pushToast("Помилка запуску сценарію", "error");
@@ -80,8 +194,12 @@ function OperationsShell() {
 
   async function handleAssign(object_id: string, resource_type: ResourceTypeT) {
     try {
+      const target = objects.find((o) => o.id === object_id);
       await api.createAssignment(object_id, resource_type);
-      pushToast(`Направлено: ${RESOURCE_TYPE_UA[resource_type]} на об'єкт`, "success");
+      pushToast(
+        `${RESOURCE_TYPE_UA[resource_type]} вирушив до ${target?.name ?? "об'єкта"}`,
+        "info",
+      );
     } catch (e) {
       console.error(e);
       pushToast(`Помилка призначення`, "error");
@@ -156,6 +274,13 @@ function OperationsShell() {
             <div className="flex items-center gap-2 mb-4 text-on-surface-variant">
               <i className="material-symbols-outlined text-[20px]">analytics</i>
               <h3 className="font-bold text-[12px] uppercase tracking-wider">Міський індекс стійкості</h3>
+              <span
+                className="material-symbols-outlined text-on-surface-variant text-[14px] cursor-help"
+                title="Середній Бал стійкості по всіх об'єктах міста (0–100). Падіння означає, що ML-модель бачить погіршення умов: розряд батарей, відсутність живлення, перегрів, перевищення CO₂ або критичну заповненість."
+                aria-label="Що таке Міський індекс стійкості"
+              >
+                info
+              </span>
             </div>
             <div className="flex items-baseline gap-3">
               <span className="font-[DM_Sans] text-[48px] font-bold leading-none text-on-surface animate-count-up">
@@ -215,11 +340,11 @@ function OperationsShell() {
               <h3 className="font-bold text-[12px] uppercase tracking-wider">Доступні Ресурси</h3>
             </div>
             <div className="flex flex-col gap-3 font-mono text-[14px] text-on-surface">
-              <ResourceRow icon="bolt" label="Генератори" count={3} />
-              <ResourceRow icon="satellite_alt" label="Starlink" count={2} />
-              <ResourceRow icon="engineering" label="Техбригади" count={1} />
-              <ResourceRow icon="battery_charging_full" label="Батареї" count={5} />
-              <ResourceRow icon="local_gas_station" label="Паливо" count={8} />
+              <ResourceRow icon="bolt" label="Генератори" count={availableResources.GENERATOR} />
+              <ResourceRow icon="satellite_alt" label="Starlink" count={availableResources.STARLINK} />
+              <ResourceRow icon="engineering" label="Техбригади" count={availableResources.TECH_TEAM} />
+              <ResourceRow icon="battery_charging_full" label="Батареї" count={availableResources.BATTERY_BANK} />
+              <ResourceRow icon="local_gas_station" label="Паливо" count={availableResources.FUEL} />
             </div>
           </div>
         </aside>
@@ -233,6 +358,7 @@ function OperationsShell() {
               selectedId={selectedObjectId}
               onSelect={setSelectedObjectId}
               className="absolute inset-0 h-full w-full z-0"
+              rescueVehicles={vehicles}
             />
             <div className="absolute top-[24px] right-[24px] z-[1000]">
               <div className="glass-card rounded-lg p-3 text-xs">
@@ -280,23 +406,6 @@ function OperationsShell() {
           object={selectedObject}
           onClose={() => setSelectedObjectId(null)}
           onAssign={handleAssign}
-          onBriefing={(id) => setBriefingObjectId(id)}
-          onCounterfactual={(id) => setCounterfactualObjectId(id)}
-        />
-      )}
-
-      {briefingObjectId && (
-        <OperatorBriefingPanel
-          objectId={briefingObjectId}
-          onClose={() => setBriefingObjectId(null)}
-        />
-      )}
-
-      {counterfactualObjectId && (
-        <CounterfactualPanel
-          objectId={counterfactualObjectId}
-          objectName={objects.find((o) => o.id === counterfactualObjectId)?.name ?? ""}
-          onClose={() => setCounterfactualObjectId(null)}
         />
       )}
     </div>
@@ -409,14 +518,10 @@ function ObjectDrawer({
   object,
   onClose,
   onAssign,
-  onBriefing,
-  onCounterfactual,
 }: {
   object: ObjectState;
   onClose: () => void;
   onAssign: (object_id: string, rt: ResourceTypeT) => Promise<void>;
-  onBriefing: (objectId: string) => void;
-  onCounterfactual: (objectId: string) => void;
 }) {
   const t = object.telemetry;
   const s = object.score;
@@ -454,6 +559,18 @@ function ObjectDrawer({
     return "Стабільно: живлення, зв'язок та ресурси в нормі.";
   }, [status, t, object.capacity]);
 
+  const brief = useMemo(
+    () => buildOperatorBrief(object, s ?? null, t ?? null),
+    [object, s, t],
+  );
+
+  const briefUrgencyClass = {
+    ok: "bg-secondary/10 border-secondary/30 text-secondary",
+    watch: "bg-tertiary-container/10 border-tertiary/30 text-tertiary",
+    act: "bg-tertiary-container/20 border-tertiary/40 text-tertiary",
+    critical: "bg-error-container/20 border-error/40 text-error",
+  }[brief.urgency];
+
   return (
     <aside className="fixed right-0 top-16 h-[calc(100vh-4rem)] w-[26rem] max-w-[calc(100vw-2rem)] z-[60] p-[24px] bg-surface-container-high/95 backdrop-blur-xl border-l border-outline-variant/30 shadow-2xl flex flex-col animate-slide-in-right">
       <div className="flex justify-between items-start mb-6">
@@ -462,22 +579,6 @@ function ObjectDrawer({
           <p className="text-[14px] text-on-surface-variant">Аналіз телеметрії</p>
         </div>
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => onCounterfactual(object.id)}
-            className="p-2 text-tertiary hover:bg-tertiary/10 rounded-full transition-colors"
-            title="What-if: ML counterfactual"
-            aria-label="Counterfactual"
-          >
-            <i className="material-symbols-outlined">science</i>
-          </button>
-          <button
-            onClick={() => onBriefing(object.id)}
-            className="p-2 text-primary hover:bg-primary/10 rounded-full transition-colors"
-            title="AI-брифінг для оператора"
-            aria-label="AI-брифінг"
-          >
-            <i className="material-symbols-outlined">auto_awesome</i>
-          </button>
           <button
             onClick={onClose}
             className="p-2 text-on-surface-variant hover:text-primary transition-colors bg-surface-container rounded-full"
@@ -502,11 +603,18 @@ function ObjectDrawer({
         </div>
 
         {/* Explanation */}
-        <div className={`p-3 rounded-lg border text-[14px] ${
-          status === "CRITICAL" ? "bg-error-container/10 border-error/30 text-error" :
-          status === "WARNING" ? "bg-tertiary-container/10 border-tertiary/30 text-tertiary" :
-          "bg-secondary-container/10 border-secondary/30 text-secondary"
-        }`}>
+        <div
+          className={`p-3 rounded-lg border text-[14px] ${
+            status === "RESCUE_IN_TRANSIT"
+              ? "bg-rescue/10 border-rescue/30 text-rescue"
+              : status === "CRITICAL"
+                ? "bg-error-container/10 border-error/30 text-error"
+                : status === "WARNING"
+                  ? "bg-tertiary-container/10 border-tertiary/30 text-tertiary"
+                  : "bg-secondary-container/10 border-secondary/30 text-secondary"
+          }`}
+          data-testid="object-explanation"
+        >
           {explanation}
         </div>
 
@@ -520,19 +628,47 @@ function ObjectDrawer({
           <TelemetryStat label="Генератор" value={t?.generator_on ? "Увімк." : "Вимк."} color={t?.generator_on ? "#4ae176" : "#c2c6d6"} />
         </div>
 
-        {/* Score breakdown */}
-        <div className="bg-[#111827] p-4 rounded-lg border border-white/5 flex flex-col gap-4">
-          <div className="flex justify-between items-center">
-            <h4 className="font-bold text-[12px] uppercase tracking-wider text-on-surface-variant">Бал стійкості</h4>
-            <ScoreRing score={score} size={56} thickness={6} />
+        {/* Operator brief — проста людинo-читабельна порада */}
+        <div
+          className={`p-4 rounded-lg border flex flex-col gap-3 ${briefUrgencyClass}`}
+          data-testid="operator-brief"
+        >
+          <div className="flex items-start gap-3">
+            <i className="material-symbols-outlined text-[24px]">
+              {brief.urgency === "ok" ? "check_circle"
+                : brief.urgency === "watch" ? "visibility"
+                : brief.urgency === "act" ? "build"
+                : "warning"}
+            </i>
+            <div className="flex-1">
+              <div className="text-[10px] font-bold uppercase tracking-wider opacity-70 mb-0.5">
+                {brief.urgency === "ok" ? "Все добре" : "Рекомендація диспетчеру"}
+              </div>
+              <div className="font-bold text-[16px] leading-tight mb-1">
+                {brief.headline}
+              </div>
+              <div className="text-[14px] leading-snug">
+                {brief.recommendation}
+              </div>
+            </div>
           </div>
-          {s?.components ? (
-            <ShapBreakdown components={s.components as Record<string, unknown>} />
-          ) : (
-            <p className="text-on-surface-variant italic text-[12px]">
-              ML-компоненти ще не розраховані
-            </p>
-          )}
+          <div className="flex items-center gap-2 text-[12px] opacity-80 border-t border-white/10 pt-2">
+            <i className="material-symbols-outlined text-[16px]">schedule</i>
+            <span className="font-mono">{brief.forecast}</span>
+          </div>
+          {brief.suggestedResource &&
+            brief.suggestedResource !== "EVACUATION" &&
+            status !== "RESCUE_IN_TRANSIT" && (
+              <button
+                onClick={() =>
+                  onAssign(object.id, brief.suggestedResource as ResourceTypeT)
+                }
+                className="bg-primary text-on-primary font-semibold text-[14px] py-2.5 rounded-lg hover:bg-primary-container hover:text-on-primary-container transition-colors flex items-center justify-center gap-2 active:scale-95"
+              >
+                <i className="material-symbols-outlined text-[18px]">local_shipping</i>
+                Направити {RESOURCE_TYPE_UA[brief.suggestedResource as ResourceTypeT]} одразу
+              </button>
+            )}
         </div>
 
         {/* Forecast */}
@@ -549,35 +685,73 @@ function ObjectDrawer({
         )}
 
         {/* Resource buttons */}
-        <div>
-          <h4 className="font-bold text-[12px] uppercase tracking-wider text-on-surface-variant mb-3">
-            Направити ресурс
-          </h4>
-          <div className="grid grid-cols-2 gap-2">
-            {resources.map((rt) => (
-              <button
-                key={rt}
-                onClick={() => onAssign(object.id, rt)}
-                className="bg-primary/10 text-primary hover:bg-primary hover:text-on-primary border border-primary/30 px-3 py-2 rounded font-bold text-[12px] uppercase tracking-wider transition-colors"
-              >
-                {rt === "GENERATOR" ? "Генератор" :
-                  rt === "BATTERY_BANK" ? "Батарея" :
-                  rt === "STARLINK" ? "Starlink" :
-                  rt === "TECH_TEAM" ? "Техбригада" :
-                  "Паливо"}
-              </button>
-            ))}
+        {status === "RESCUE_IN_TRANSIT" ? (
+          <div
+            className="bg-rescue/10 border border-rescue/30 rounded-lg p-4 flex items-center gap-3"
+            data-testid="resource-in-transit"
+          >
+            <i className="material-symbols-outlined text-rescue text-[28px]">local_shipping</i>
+            <div>
+              <div className="font-bold text-[14px] text-rescue uppercase tracking-wider">
+                Ресурс у дорозі
+              </div>
+              <div className="text-[12px] text-on-surface-variant mt-0.5">
+                Допомога вже направлена. Очікуйте прибуття бригади.
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div>
+            <h4 className="font-bold text-[12px] uppercase tracking-wider text-on-surface-variant mb-3">
+              Направити ресурс
+            </h4>
+            <div className="grid grid-cols-2 gap-2">
+              {resources.map((rt) => (
+                <button
+                  key={rt}
+                  onClick={() => onAssign(object.id, rt)}
+                  className="bg-primary/10 text-primary hover:bg-primary hover:text-on-primary border border-primary/30 px-3 py-2 rounded font-bold text-[12px] uppercase tracking-wider transition-colors"
+                >
+                  {rt === "GENERATOR" ? "Генератор" :
+                    rt === "BATTERY_BANK" ? "Батарея" :
+                    rt === "STARLINK" ? "Starlink" :
+                    rt === "TECH_TEAM" ? "Техбригада" :
+                    "Паливо"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );
 }
 
+const TELEMETRY_HINTS: Record<string, string> = {
+  "Заряд": "Залишок заряду батареї об'єкта. Нижче 30% — критично, без зовнішнього живлення об'єкт вимкнеться через ~1 год.",
+  "Температура": "Температура всередині приміщення. Норма 18-25°C. Вище 28°C — дискомфорт, потрібна вентиляція.",
+  "CO₂": "Рівень вуглекислого газу (ppm). Норма <800. 1000-1500 — задуха, сонливість. >2000 — небезпечно, потрібна негайна вентиляція. Вимірюється датчиком якості повітря.",
+  "Люди": "Поточна кількість людей / максимальна місткість. Якщо >90% — переповнення, ризик паніки та проблем з повітрям.",
+  "Зв'язок": "Стан інтернет-з'єднання. Залежить від Starlink (якщо є на об'єкті) або звичайного провайдера. Без зв'язку диспетчер не може бачити реальний час телеметрії.",
+  "Генератор": "Чи увімкнений резервний генератор. На реальному об'єкті вмикається бригадою вручну після доставки пального.",
+};
+
 function TelemetryStat({ label, value, color }: { label: string; value: string; color: string }) {
+  const hint = TELEMETRY_HINTS[label];
   return (
     <div className="bg-[#111827] p-3 rounded-lg border border-white/5 flex flex-col gap-1">
-      <span className="font-bold text-[12px] uppercase tracking-wider text-on-surface-variant">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="font-bold text-[12px] uppercase tracking-wider text-on-surface-variant">{label}</span>
+        {hint && (
+          <span
+            className="material-symbols-outlined text-on-surface-variant text-[12px] cursor-help"
+            title={hint}
+            aria-label={`Що таке ${label}`}
+          >
+            info
+          </span>
+        )}
+      </div>
       <span className="font-mono text-[24px] font-semibold" style={{ color }}>{value}</span>
     </div>
   );

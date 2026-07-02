@@ -59,7 +59,7 @@ function relativeTime(ts: string): string {
 }
 
 export function EventLog() {
-  const { events, setEvents } = useStore();
+  const { events, setEvents, clearEvents } = useStore();
 
   useEffect(() => {
     // Initial bootstrap: тягнемо останні 30 подій.
@@ -101,7 +101,7 @@ export function EventLog() {
               {events.length}
             </span>
             <button
-              onClick={() => setEvents([])}
+              onClick={() => clearEvents()}
               title="Очистити журнал"
               className="text-on-surface-variant/60 hover:text-error transition-colors p-1 rounded hover:bg-error/10"
             >

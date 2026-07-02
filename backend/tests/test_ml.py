@@ -151,16 +151,14 @@ def test_status_roundtrip():
 
 
 def test_inference_loads_model_after_training(tmp_path):
-    """Після тренування inference може завантажити артефакт."""
-    from app.ml.store import (
-        ARTIFACTS_DIR,
-        SCORE_MODEL_VERSION,
-        save_artifact,
-        load_artifact,
-    )
+    """save_artifact → load_artifact roundtrip.
 
-    # Зберігаємо фейковий артефакт
-    name = f"score_model_{SCORE_MODEL_VERSION}"
+    ВАЖЛИВО: використовуємо окреме тестове ім'я, а НЕ score_model_{VERSION} —
+    інакше тест перезаписує і видаляє реальну натреновану модель.
+    """
+    from app.ml.store import ARTIFACTS_DIR, save_artifact, load_artifact
+
+    name = "score_model_pytest_roundtrip"
     fake_payload = {"regressor": "fake", "feature_names": list(FEATURE_NAMES)}
     save_artifact(name, fake_payload)
 
@@ -168,7 +166,6 @@ def test_inference_loads_model_after_training(tmp_path):
         loaded = load_artifact(name)
         assert loaded["regressor"] == "fake"
     finally:
-        # Cleanup
         path = ARTIFACTS_DIR / f"{name}.joblib"
         if path.exists():
             path.unlink()

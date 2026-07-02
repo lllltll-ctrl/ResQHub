@@ -19,6 +19,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -180,6 +181,9 @@ class Telemetry(Base):
             "signal >= 0 AND signal <= 4", name="ck_telemetry_signal_range"
         ),
         CheckConstraint("occupancy >= 0", name="ck_telemetry_occupancy_nonneg"),
+        # Композитний індекс для "остання телеметрія по кожному об'єкту"
+        # (max(ts) group by object_id) — інакше full scan по всій таблиці.
+        Index("ix_telemetry_object_ts", "object_id", "ts"),
     )
 
 
@@ -209,6 +213,8 @@ class Score(Base):
 
     __table_args__ = (
         CheckConstraint("score >= 0 AND score <= 100", name="ck_score_range"),
+        # Композитний індекс для "останній score по кожному об'єкту".
+        Index("ix_scores_object_ts", "object_id", "ts"),
     )
 
 
@@ -258,6 +264,9 @@ class Assignment(Base):
     justification: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
+    )
+    arrived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
     object: Mapped[Object] = relationship(back_populates="assignments")

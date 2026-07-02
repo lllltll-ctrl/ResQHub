@@ -10,6 +10,7 @@ import type {
   WsSnapshot,
   BoltEvent,
   Scenario,
+  Assignment,
 } from "@/lib/types";
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
@@ -87,9 +88,31 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
             } catch {
               /* ignore */
             }
+            // assignments із snapshot
+            if (Array.isArray(snap.assignments)) {
+              setAssignments(snap.assignments as Assignment[]);
+            } else {
+              try {
+                const a = await api.assignments();
+                setAssignments(a);
+              } catch {
+                /* ignore */
+              }
+            }
+          } else if (msg.type === "scenario_change") {
+            // Миттєвий push зміни сценарію — не чекаємо 3с snapshot
+            setActiveScenario((msg.scenario as Scenario | null) ?? null);
           } else if (msg.type === "event" && msg.event) {
             // Realtime push нової події в журнал (без polling)
             appendEvent(msg.event as BoltEvent);
+          } else if (msg.type === "assignment") {
+            // Миттєвий push призначення (відправлено / прибуло / скасовано)
+            try {
+              const a = await api.assignments();
+              setAssignments(a);
+            } catch {
+              /* ignore */
+            }
           }
         } catch {
           /* ignore malformed */

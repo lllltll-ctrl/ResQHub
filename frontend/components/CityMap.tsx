@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import type { ObjectState } from "@/lib/types";
+import type { RescueVehicle } from "./CityMapInner";
 
 const CityMapInner = dynamic(() => import("./CityMapInner"), {
   ssr: false,
@@ -12,11 +13,14 @@ const CityMapInner = dynamic(() => import("./CityMapInner"), {
   ),
 });
 
+export type { RescueVehicle } from "./CityMapInner";
+
 export function CityMap(props: {
   objects: ObjectState[];
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   className?: string;
+  rescueVehicles?: RescueVehicle[];
 }) {
   return <CityMapInner {...props} />;
 }

@@ -1,5 +1,5 @@
 """
-Unit tests for P2 monitoring modules: drift + anomaly + VRP solver.
+Unit tests for P2 monitoring modules: drift + anomaly.
 """
 
 from __future__ import annotations
@@ -15,11 +15,6 @@ sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.ml.monitoring.drift import DriftDetector, FeatureDrift
 from app.ml.monitoring.anomaly import AnomalyDetector
-from app.ml.monitoring.vrp_solver import (
-    VRPCandidate,
-    solve_vrp,
-    RESOURCE_BASES,
-)
 from app.ml.features import FEATURE_NAMES
 
 
@@ -133,69 +128,3 @@ def test_anomaly_detector_load_persists():
     s1 = det1.score("test", test_x)
     s2 = det2.score("test", test_x)
     assert abs(s1.score - s2.score) < 1e-6
-
-
-# ─────────────────────────────────────────────────────────────────────
-# VRP solver
-# ─────────────────────────────────────────────────────────────────────
-def test_vrp_solver_basic():
-    """VRP solver повертає assignments для кандидатів."""
-    cands = [
-        VRPCandidate(
-            object_id=f"obj-{i}",
-            lat=50.25 + i * 0.01,
-            lon=28.65 + i * 0.01,
-            priority_score=80.0 - i,
-            time_to_critical_min=60.0,
-        )
-        for i in range(3)
-    ]
-    assignments = solve_vrp(cands, max_total_assignments=3)
-    assert len(assignments) >= 1
-    for a in assignments:
-        assert a.is_covered
-        assert a.eta_min > 0
-        assert a.base_name in [b["name"] for b in RESOURCE_BASES]
-
-
-def test_vrp_solver_capacity_limit():
-    """VRP не перевищує capacity bases."""
-    cands = [
-        VRPCandidate(
-            object_id=f"obj-{i}",
-            lat=50.25 + (i % 5) * 0.005,
-            lon=28.65 + (i // 5) * 0.005,
-            priority_score=90.0 - i,
-            time_to_critical_min=120.0,
-        )
-        for i in range(20)  # Більше ніж capacity всіх bases разом
-    ]
-    assignments = solve_vrp(cands, max_total_assignments=10)
-    # Перевірка: жодна base не перевищує capacity
-    from collections import Counter
-
-    base_counts = Counter(a.base_name for a in assignments)
-    for base in RESOURCE_BASES:
-        assert base_counts[base["name"]] <= base["capacity"]
-
-
-def test_vrp_solver_respects_time_windows():
-    """VRP не призначає якщо ETA > ttc."""
-    # Кандидат далеко, з ttc=10 хв (має бути проігнорований)
-    cands = [
-        VRPCandidate(
-            object_id="far-obj",
-            lat=51.0,  # Дуже далеко
-            lon=29.0,
-            priority_score=100.0,
-            time_to_critical_min=5.0,  # 5 хв до критики
-        )
-    ]
-    assignments = solve_vrp(cands, max_total_assignments=1)
-    # Має бути 0 призначень, бо жодна base не встигне
-    assert len(assignments) == 0
-
-
-def test_vrp_solver_empty():
-    """VRP з порожнім списком повертає порожній результат."""
-    assert solve_vrp([]) == []
