@@ -20,7 +20,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     setWsConnected,
     setRouting,
     setActiveScenario,
-    setEvents,
     setAssignments,
     appendEvent,
   } = useStore();
@@ -32,12 +31,13 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     async function bootstrap() {
       try {
-        const [summary, objects, routing, scenario, events, assignments] = await Promise.all([
+        // Події НЕ тягнемо у bootstrap: оперативний журнал стартує порожнім
+        // і наповнюється лише новими подіями через WS (appendEvent).
+        const [summary, objects, routing, scenario, assignments] = await Promise.all([
           api.dashboard(),
           api.dashboardFull(),
           api.routing(5),
           api.activeScenario(),
-          api.events(50),
           api.assignments(),
         ]);
         if (cancelled) return;
@@ -45,7 +45,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         setObjects(objects as ObjectState[]);
         setRouting(routing);
         setActiveScenario(scenario as Scenario | null);
-        setEvents(events as BoltEvent[]);
         setAssignments(assignments);
       } catch (e) {
         console.error("[bootstrap] failed:", e);

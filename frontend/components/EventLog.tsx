@@ -1,10 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { api } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { RESOURCE_TYPE_UA, SCENARIO_TYPE_UA, SCENARIO_SCOPE_UA, STATUS_LABEL_UA } from "@/lib/types";
-import type { BoltEvent } from "@/lib/types";
 
 function translateEventMessage(message: string): string {
   let result = message;
@@ -59,25 +56,9 @@ function relativeTime(ts: string): string {
 }
 
 export function EventLog() {
-  const { events, setEvents, clearEvents } = useStore();
-
-  useEffect(() => {
-    // Initial bootstrap: тягнемо останні 30 подій.
-    // Далі оновлення приходять через WS push (RealtimeProvider) — без polling.
-    let cancelled = false;
-    async function load() {
-      try {
-        const data = await api.events(30);
-        if (!cancelled && Array.isArray(data)) setEvents(data as BoltEvent[]);
-      } catch (e) {
-        console.error("[EventLog] fetch failed:", e);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [setEvents]);
+  // Оперативний журнал: лише події поточної сесії (приходять через WS
+  // push у RealtimeProvider). На вході порожній — історія в Аналітиці.
+  const { events, clearEvents } = useStore();
 
   function formatTime(ts: string): string {
     try {

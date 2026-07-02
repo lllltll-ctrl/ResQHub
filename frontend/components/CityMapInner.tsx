@@ -1,6 +1,6 @@
 "use client";
 
-import { MapContainer, TileLayer, Marker, Popup, Circle } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline } from "react-leaflet";
 import L from "leaflet";
 import { useEffect, useMemo, useRef } from "react";
 import type { ObjectState, StatusT } from "@/lib/types";
@@ -87,8 +87,12 @@ function makeIcon(status: StatusT, need: string | null): L.DivIcon {
   });
 }
 
-function makeVehicleIcon(label: string, kind: "outbound" | "inbound"): L.DivIcon {
-  const color = kind === "outbound" ? "#9b59b6" : "#4ae176";
+type VehicleKind = "outbound" | "inbound" | "working";
+
+function makeVehicleIcon(label: string, kind: VehicleKind): L.DivIcon {
+  const color =
+    kind === "outbound" ? "#9b59b6" : kind === "working" ? "#df7412" : "#4ae176";
+  const glyph = kind === "outbound" ? "🚚" : kind === "working" ? "🔧" : "↩";
   return L.divIcon({
     className: "resq-vehicle",
     html: `
@@ -104,7 +108,7 @@ function makeVehicleIcon(label: string, kind: "outbound" | "inbound"): L.DivIcon
           display:flex; align-items:center; justify-content:center;
           font-size:14px; color:white; font-weight:700;
           box-shadow: 0 0 12px ${color};
-        ">${kind === "outbound" ? "🚚" : "↩"}</div>
+        ">${glyph}</div>
         <div style="
           position:absolute; top:-4px; right:-4px;
           background: #0B1220; color: ${color};
@@ -128,32 +132,42 @@ const CARTO_ATTR =
 
 export interface RescueVehicle {
   id: string;
-  from: [number, number];
-  waypoint?: [number, number];
-  to: [number, number];
+  /** Полілінія маршруту (lat,lon) — реальні дороги з OSRM або пряма лінія. */
+  path: [number, number][];
   startMs: number;
   endMs: number;
   label: string;
-  phase?: "outbound" | "inbound";
+  kind: VehicleKind;
   onComplete?: () => void;
 }
 
-function lerp(a: number, b: number, t: number) {
-  return a + (b - a) * t;
-}
-
-/** Квадратичний Безьє для руху через waypoint. */
-function quadBezier(
-  p0: [number, number],
-  p1: [number, number],
-  p2: [number, number],
-  t: number
-): [number, number] {
-  const u = 1 - t;
-  return [
-    u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0],
-    u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1],
-  ];
+/** Позиція вздовж полілінії за часткою пройденого шляху t∈[0,1] (за довжиною). */
+function posAlongPath(path: [number, number][], t: number): [number, number] {
+  if (path.length === 0) return [0, 0];
+  if (path.length === 1) return path[0];
+  // Кумулятивні довжини сегментів (евклідова відстань достатня для короткого маршруту)
+  const segLen: number[] = [];
+  let total = 0;
+  for (let i = 1; i < path.length; i++) {
+    const dLat = path[i][0] - path[i - 1][0];
+    const dLon = path[i][1] - path[i - 1][1];
+    const len = Math.hypot(dLat, dLon);
+    segLen.push(len);
+    total += len;
+  }
+  if (total === 0) return path[0];
+  let target = t * total;
+  for (let i = 0; i < segLen.length; i++) {
+    if (target <= segLen[i]) {
+      const f = segLen[i] === 0 ? 0 : target / segLen[i];
+      return [
+        path[i][0] + (path[i + 1][0] - path[i][0]) * f,
+        path[i][1] + (path[i + 1][1] - path[i][1]) * f,
+      ];
+    }
+    target -= segLen[i];
+  }
+  return path[path.length - 1];
 }
 
 function VehicleMarker({ vehicle }: { vehicle: RescueVehicle }) {
@@ -170,17 +184,12 @@ function VehicleMarker({ vehicle }: { vehicle: RescueVehicle }) {
       const elapsed = now - startRef.current;
       const duration = vehicle.endMs - vehicle.startMs;
       const t = Math.max(0, Math.min(1, elapsed / duration));
-      // ease-in-out
-      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      let pos: [number, number];
-      if (vehicle.waypoint) {
-        // Квадратичний Безьє: from → waypoint → to
-        pos = quadBezier(vehicle.from, vehicle.waypoint, vehicle.to, ease);
-      } else {
-        pos = [lerp(vehicle.from[0], vehicle.to[0], ease), lerp(vehicle.from[1], vehicle.to[1], ease)];
-      }
-      if (markerRef.current) {
-        markerRef.current.setLatLng(pos);
+      // Стаціонарний маркер (техбригада «працює») не рухається — лише таймер.
+      if (vehicle.kind !== "working") {
+        // ease-in-out
+        const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        const pos = posAlongPath(vehicle.path, ease);
+        if (markerRef.current) markerRef.current.setLatLng(pos);
       }
       if (t >= 1) {
         if (!completedRef.current) {
@@ -197,17 +206,14 @@ function VehicleMarker({ vehicle }: { vehicle: RescueVehicle }) {
     };
   }, [vehicle]);
 
-  const initialPos: [number, number] = [
-    vehicle.from[0],
-    vehicle.from[1],
-  ];
+  const initialPos: [number, number] = vehicle.path[0] ?? [0, 0];
   return (
     <Marker
       ref={(m) => {
         markerRef.current = m;
       }}
       position={initialPos}
-      icon={makeVehicleIcon(vehicle.label, vehicle.phase ?? "outbound")}
+      icon={makeVehicleIcon(vehicle.label, vehicle.kind)}
       zIndexOffset={1000}
     />
   );
@@ -314,6 +320,21 @@ export default function CityMapInner({
           </Popup>
         </Marker>
       ))}
+      {/* Маршрут по дорогах під машинкою, що рухається */}
+      {rescueVehicles
+        .filter((v) => v.kind !== "working" && v.path.length > 1)
+        .map((v) => (
+          <Polyline
+            key={`route-${v.id}`}
+            positions={v.path}
+            pathOptions={{
+              color: v.kind === "outbound" ? "#9b59b6" : "#4ae176",
+              weight: 3,
+              opacity: 0.5,
+              dashArray: "6 8",
+            }}
+          />
+        ))}
       {rescueVehicles.map((v) => (
         <VehicleMarker key={v.id} vehicle={v} />
       ))}

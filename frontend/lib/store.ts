@@ -16,8 +16,9 @@ interface AppState {
   routing: RoutingRecommendation[];
   assignments: Assignment[];
   activeScenario: Scenario | null;
+  // Оперативний журнал: лише події поточної сесії (з моменту входу).
+  // Історія за весь час — окремо в Аналітиці (fetch api.events).
   events: BoltEvent[];
-  eventsClearedAt: number | null;
 
   // UI
   selectedObjectId: string | null;
@@ -45,7 +46,6 @@ export const useStore = create<AppState>((set) => ({
   assignments: [],
   activeScenario: null,
   events: [],
-  eventsClearedAt: null,
   selectedObjectId: null,
   panel: "dashboard",
   wsConnected: false,
@@ -58,17 +58,11 @@ export const useStore = create<AppState>((set) => ({
   setEvents: (e) => set({ events: e }),
   appendEvent: (e) =>
     set((st) => {
-      // Дедуплікація за id — WS може прислати ту ж подію, що вже в initial bootstrap.
+      // Дедуплікація за id (WS може прислати ту ж подію двічі).
       if (st.events.some((x) => x.id === e.id)) return st;
-      // Якщо користувач очищав журнал — ігноруємо події, що "прилетіли" з минулого.
-      if (st.eventsClearedAt) {
-        const clearedMs = st.eventsClearedAt;
-        const evMs = new Date(e.ts).getTime();
-        if (evMs < clearedMs) return st;
-      }
-      return { events: [e, ...st.events].slice(0, 100), eventsClearedAt: null };
+      return { events: [e, ...st.events].slice(0, 100) };
     }),
-  clearEvents: () => set({ events: [], eventsClearedAt: Date.now() }),
+  clearEvents: () => set({ events: [] }),
   setSelectedObjectId: (id) => set({ selectedObjectId: id }),
   setPanel: (p) => set({ panel: p }),
   setWsConnected: (c) => set({ wsConnected: c }),

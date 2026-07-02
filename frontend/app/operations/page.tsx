@@ -5,7 +5,6 @@ import { RealtimeProvider } from "@/components/RealtimeProvider";
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import { CityMap, type RescueVehicle } from "@/components/CityMap";
-import { RoutingPanel } from "@/components/RoutingPanel";
 import { EventLog } from "@/components/EventLog";
 import { StatCard } from "@/components/StatCard";
 import { ToastContainer, pushToast } from "@/components/Toast";
@@ -15,6 +14,47 @@ import { RESOURCE_TYPE_UA, SCENARIO_TYPE_UA } from "@/lib/types";
 import Link from "next/link";
 import type { ObjectState, ResourceTypeT } from "@/lib/types";
 import { buildOperatorBrief } from "@/lib/recommendations";
+
+// ── Парк техніки та логістика ────────────────────────────────────────
+const DEPOT: [number, number] = [50.255, 28.65];
+const FLEET: Record<string, number> = {
+  GENERATOR: 3,
+  STARLINK: 2,
+  TECH_TEAM: 2,
+  BATTERY_BANK: 5,
+  FUEL: 8,
+};
+// Консумативні ресурси лишаються на об'єкті (не повертаються у парк).
+// TECH_TEAM — повертається після роботи.
+const CONSUMABLE = new Set(["GENERATOR", "STARLINK", "BATTERY_BANK", "FUEL"]);
+
+const ANIM_OUT_MS = 6000; // виїзд
+const ANIM_BACK_MS = 5000; // повернення
+const WORK_MS = 4000; // техбригада «працює» на місці
+
+// Маршрут по РЕАЛЬНИХ дорогах через OSRM. Fallback — пряма лінія, тож
+// анімація ніколи не ламається (навіть офлайн).
+async function fetchRoad(
+  from: [number, number],
+  to: [number, number]
+): Promise<[number, number][]> {
+  try {
+    const url =
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(String(res.status));
+    const data = await res.json();
+    const coords = data?.routes?.[0]?.geometry?.coordinates;
+    if (Array.isArray(coords) && coords.length > 1) {
+      // OSRM віддає [lon,lat] → перевертаємо у [lat,lon]
+      return coords.map((c: [number, number]) => [c[1], c[0]] as [number, number]);
+    }
+  } catch {
+    /* fallback нижче */
+  }
+  return [from, to];
+}
 
 export default function OperationsPage() {
   return (
@@ -56,118 +96,130 @@ function OperationsShell() {
 
   const selectedObject = objects.find((o) => o.id === selectedObjectId) ?? null;
 
-  // Парк техніки міста мінус те, що зараз у дорозі (активні assignments)
-  const FLEET: Record<string, number> = {
-    GENERATOR: 3,
-    STARLINK: 2,
-    TECH_TEAM: 2,
-    BATTERY_BANK: 5,
-    FUEL: 8,
-  };
-  const availableResources = useMemo(() => {
-    const out: Record<string, number> = { ...FLEET };
-    for (const a of assignments) {
-      if (a.status === "DISPATCHED" || a.status === "REQUESTED") {
-        out[a.resource_type] = Math.max(0, (out[a.resource_type] ?? 0) - 1);
-      }
-    }
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignments]);
-
-
   // Активні анімаційні машини на карті
   const [vehicles, setVehicles] = useState<RescueVehicle[]>([]);
-  // Скорочуємо тривалість анімації для кращого UX (eta_min — це реальний ETA,
-  // а тривалість руху по карті — тільки візуалізація, 8с на виїзд + 5с на повернення).
-  const ANIM_OUT_MS = 8000;
-  const ANIM_BACK_MS = 5000;
-  const DEPOT: [number, number] = [50.255, 28.65];
   const knownVehiclesRef = useRef<Set<string>>(new Set());
 
-  // Коли створюється нове assignment — додаємо vehicle "outbound".
+  // Доступність ресурсів: парк мінус ті, що «зайняті».
+  // Консумативні (генератор/паливо/батарея/Starlink) лишаються на об'єкті
+  // назавжди; техбригада повертається → звільняє одиницю.
+  const [committed, setCommitted] = useState<Record<string, number>>({});
+  const availableResources = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const k of Object.keys(FLEET)) {
+      out[k] = Math.max(0, FLEET[k] - (committed[k] || 0));
+    }
+    return out;
+  }, [committed]);
+
+  // Коли грід повертається (сценарій завершився) — техніку поповнюємо.
+  useEffect(() => {
+    if (!activeScenario) setCommitted({});
+  }, [activeScenario]);
+
+  // Нове assignment → машина виїжджає по дорогах.
   useEffect(() => {
     if (!assignments.length) return;
     const known = knownVehiclesRef.current;
-    const fresh = assignments.filter((a) => !known.has(a.id) && a.status === "DISPATCHED");
+    const fresh = assignments.filter(
+      (a) => !known.has(a.id) && a.status === "DISPATCHED"
+    );
     if (!fresh.length) return;
-    const target = objects.find((o) => o.id === fresh[0].object_id);
-    if (!target) return;
     fresh.forEach((a) => known.add(a.id));
-    const newVehicles: RescueVehicle[] = fresh.map((a) => {
-      // Проміжна точка — робимо маршрут не по прямій.
-      // Беремо середину між депо і обʼєктом + перпендикулярний зсув.
-      const midLat = (DEPOT[0] + target.lat) / 2;
-      const midLon = (DEPOT[1] + target.lon) / 2;
-      const dx = target.lon - DEPOT[1];
-      const dy = target.lat - DEPOT[0];
-      const len = Math.sqrt(dx * dx + dy * dy) || 1;
-      // Перпендикулярний вектор (-dy, dx), нормалізований
-      const perpLat = -dy / len;
-      const perpLon = dx / len;
-      // Зсув ~25% від довжини маршруту
-      const offset = len * 0.18;
-      const waypoint: [number, number] = [
-        midLat + perpLat * offset,
-        midLon + perpLon * offset,
-      ];
 
-      const startMs = performance.now();
-      const endMs = startMs + ANIM_OUT_MS;
-      return {
-        id: `out-${a.id}`,
-        from: DEPOT,
-        waypoint,
-        to: [target.lat, target.lon],
-        startMs,
-        endMs,
-        phase: "outbound" as const,
-        label: RESOURCE_TYPE_UA[a.resource_type] ?? a.resource_type,
-        onComplete: () => {
-          // Допомога ПРИБУЛА на об'єкт → застосовуємо ефект ОДРАЗУ.
-          // Об'єкт виходить зі стану "в дорозі" й відновлюється (стає
-          // зеленим). Раніше ефект чекав повернення машини на базу — через
-          // це об'єкт лишався фіолетовим і поруч «висіла» машинка.
-          api
-            .completeAssignment(a.id, "success")
-            .then(() => {
-              pushToast(
-                `${RESOURCE_TYPE_UA[a.resource_type] ?? "Ресурс"} прибув на ${target.name}. Об'єкт відновлюється.`,
-                "success",
-              );
-            })
-            .catch((err) => {
-              console.error("[completeAssignment] failed:", err);
-            });
-          // Косметика: машина повертається на базу (на статус не впливає).
-          const backId = `back-${a.id}`;
-          setVehicles((cur) => {
-            if (cur.some((v) => v.id === backId)) return cur;
-            return [
-              ...cur,
-              {
-                id: backId,
-                from: [target.lat, target.lon],
-                waypoint,
-                to: DEPOT,
-                startMs: performance.now(),
-                endMs: performance.now() + ANIM_BACK_MS,
-                phase: "inbound" as const,
-                label: "↩ на базу",
-                onComplete: () => {
-                  setVehicles((cur) => cur.filter((v) => v.id !== backId));
-                  known.delete(a.id);
-                },
-              },
-            ];
+    fresh.forEach(async (a) => {
+      const target = objects.find((o) => o.id === a.object_id);
+      if (!target) return;
+      const label = RESOURCE_TYPE_UA[a.resource_type] ?? a.resource_type;
+      const dest: [number, number] = [target.lat, target.lon];
+      const isTechTeam = a.resource_type === "TECH_TEAM";
+
+      // Ресурс виїхав → доступних стає менше
+      setCommitted((c) => ({
+        ...c,
+        [a.resource_type]: (c[a.resource_type] || 0) + 1,
+      }));
+
+      const road = await fetchRoad(DEPOT, dest);
+      const back = [...road].reverse();
+      const outId = `out-${a.id}`;
+      const workId = `work-${a.id}`;
+      const backId = `back-${a.id}`;
+      const addVehicle = (v: RescueVehicle) =>
+        setVehicles((cur) => (cur.some((x) => x.id === v.id) ? cur : [...cur, v]));
+      const rm = (id: string) =>
+        setVehicles((cur) => cur.filter((v) => v.id !== id));
+
+      // ВАЖЛИВО: життєвий цикл керується setTimeout, а не rAF-onComplete.
+      // rAF (плавний рух) призупиняється у фоновій вкладці, тож завершення
+      // доставки не мало б залежати від нього — інакше при перемиканні
+      // вкладки об'єкт «завис би в дорозі».
+      const now = performance.now();
+      addVehicle({
+        id: outId,
+        path: road,
+        startMs: now,
+        endMs: now + ANIM_OUT_MS,
+        kind: "outbound",
+        label,
+      });
+
+      // Прибуття → ефект + повернення/робота
+      setTimeout(() => {
+        rm(outId);
+        api
+          .completeAssignment(a.id, "success")
+          .then(() =>
+            pushToast(
+              `${label} прибув на ${target.name}. Об'єкт відновлюється.`,
+              "success"
+            )
+          )
+          .catch((err) => console.error("[completeAssignment] failed:", err));
+
+        const spawnReturn = () => {
+          const rs = performance.now();
+          addVehicle({
+            id: backId,
+            path: back,
+            startMs: rs,
+            endMs: rs + ANIM_BACK_MS,
+            kind: "inbound",
+            label: "↩ на базу",
           });
-        },
-      };
-    });
-    setVehicles((cur) => {
-      const existing = new Set(cur.map((v) => v.id));
-      const filtered = newVehicles.filter((v) => !existing.has(v.id));
-      return filtered.length ? [...cur, ...filtered] : cur;
+          setTimeout(() => {
+            rm(backId);
+            known.delete(a.id);
+            // Техбригада повернулась → одиниця знову доступна.
+            // Консумативи лишаються витраченими на об'єкті.
+            if (isTechTeam) {
+              setCommitted((c) => ({
+                ...c,
+                TECH_TEAM: Math.max(0, (c.TECH_TEAM || 0) - 1),
+              }));
+            }
+          }, ANIM_BACK_MS);
+        };
+
+        if (isTechTeam) {
+          // Техбригада ПРАЦЮЄ на місці кілька секунд, потім повертається
+          const ws = performance.now();
+          addVehicle({
+            id: workId,
+            path: [dest],
+            startMs: ws,
+            endMs: ws + WORK_MS,
+            kind: "working",
+            label: "🔧 працює",
+          });
+          setTimeout(() => {
+            rm(workId);
+            spawnReturn();
+          }, WORK_MS);
+        } else {
+          spawnReturn();
+        }
+      }, ANIM_OUT_MS);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignments, objects]);
@@ -388,12 +440,8 @@ function OperationsShell() {
           </div>
         </main>
 
-        {/* Right sidebar — AI recommendations + log (hidden when drawer open) */}
+        {/* Right sidebar — event log (hidden when drawer open) */}
         <aside className={`w-[360px] bg-surface-container-low border-l border-outline-variant/20 flex-col p-[24px] gap-4 overflow-y-auto shrink-0 hidden xl:flex ${selectedObject ? "hidden" : "flex"}`}>
-          <div className="flex-shrink-0">
-            <RoutingPanel recommendations={routing} onAssign={handleAssign} />
-          </div>
-          <div className="w-full h-px bg-outline-variant/20" />
           <div className="flex-shrink-0">
             <EventLog />
           </div>

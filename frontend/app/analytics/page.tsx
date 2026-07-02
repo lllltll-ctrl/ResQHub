@@ -33,8 +33,29 @@ function relativeTime(ts: string): string {
 }
 
 function AnalyticsShell() {
-  const { summary, objects, events } = useStore();
+  const { summary, objects } = useStore();
   const [forecast, setForecast] = useState<HistoricalData[]>([]);
+  // Аналітика тримає ПОВНУ історію подій (незалежно від оперативного
+  // журналу на операційній сторінці, який очищається).
+  const [history, setHistory] = useState<BoltEvent[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHistory() {
+      try {
+        const data = await api.events(50);
+        if (!cancelled && Array.isArray(data)) setHistory(data as BoltEvent[]);
+      } catch (e) {
+        console.error("[analytics] events history failed:", e);
+      }
+    }
+    loadHistory();
+    const interval = setInterval(loadHistory, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   // Реальний тренд: тягнемо scores для всіх об'єктів та агрегуємо
   useEffect(() => {
@@ -433,12 +454,12 @@ function AnalyticsShell() {
             <h3 className="text-[20px] font-semibold text-on-surface">Хронологія подій</h3>
           </div>
           <div className="flex flex-col gap-2">
-            {events.length === 0 && (
+            {history.length === 0 && (
               <p className="text-[14px] text-on-surface-variant italic">Подій ще немає</p>
             )}
-            {events.slice(0, 10).map((e, idx) => {
+            {history.slice(0, 10).map((e, idx) => {
               const style = severityStyle[e.severity] ?? severityStyle.INFO;
-              const isLast = idx === Math.min(events.length, 10) - 1;
+              const isLast = idx === Math.min(history.length, 10) - 1;
               const timeStr = new Date(e.ts).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
               return (
                 <div key={e.id} className="flex gap-4 p-3 hover:bg-surface-bright/5 rounded-lg transition-colors border border-transparent hover:border-outline-variant/10">

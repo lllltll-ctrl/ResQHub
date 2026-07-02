@@ -471,15 +471,23 @@ async def broadcast_event_loop() -> AsyncGenerator[None, None]:
     """Фоново шле клієнтам snapshot стану системи кожні 3 секунди.
     Паралельно пушить нові події (type=event) для оперативного журналу.
     """
+    from datetime import datetime, timezone
+
     from app.core.database import SessionLocal
 
-    last_event_id_seen: str | None = None
+    # Пушимо лише події, що виникли ПІСЛЯ старту loop → оперативний журнал
+    # у клієнта починається порожнім, а не з бэклогу. Відстежуємо за ts
+    # (а не за UUID — uuid4 не впорядкований, тож рядкове порівняння id
+    # пропускало/дублювало події). SQLite зберігає naive-UTC.
+    last_event_ts = datetime.now(timezone.utc).replace(tzinfo=None)
     while True:
         await asyncio.sleep(3)
         if not manager.active:
             continue
         db = SessionLocal()
         try:
+            # Серверне автозавершення доставок (не залежить від вкладки клієнта)
+            orchestrator.auto_complete_due_assignments(db)
             summary = orchestrator.get_dashboard_summary(db)
             objects_state = orchestrator.get_objects_with_state(db)
             active_assignments = orchestrator.get_active_assignments(db)
@@ -517,16 +525,13 @@ async def broadcast_event_loop() -> AsyncGenerator[None, None]:
             }
             await manager.broadcast(snapshot)
 
-            # Push нових подій з моменту останнього broadcast
-            recent_events = orchestrator.get_events(db, limit=10)
+            # Push нових подій з моменту останнього broadcast (за ts)
+            recent_events = orchestrator.get_events(db, limit=20)
             if recent_events:
-                # Визначаємо "нові" — ті, чий id більший за last_event_id_seen
-                new_events: list[EventOut] = []
-                for ev in recent_events:
-                    if last_event_id_seen is None or str(ev.id) > last_event_id_seen:
-                        new_events.append(ev)
+                new_events = [ev for ev in recent_events if ev.ts > last_event_ts]
                 if new_events:
-                    last_event_id_seen = str(recent_events[0].id)
+                    last_event_ts = max(ev.ts for ev in new_events)
+                    # reversed → від найстарішої до найновішої
                     for ev in reversed(new_events):
                         await manager.broadcast(
                             {

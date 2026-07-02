@@ -540,6 +540,29 @@ def get_active_assignments(db: Session) -> list[Assignment]:
     return list(db.scalars(stmt))
 
 
+# Час «в дорозі» до автозавершення доставки (сим-секунди). Бекенд —
+# єдине авторитетне джерело: об'єкт відновлюється навіть якщо вкладка
+# оператора у фоні (де браузер заморожує таймери й анімацію).
+ASSIGNMENT_TRAVEL_SECONDS = 8
+
+
+def auto_complete_due_assignments(db: Session) -> int:
+    """Завершує DISPATCHED-призначення, що вже «доїхали» (created_at + travel)."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    threshold = now - timedelta(seconds=ASSIGNMENT_TRAVEL_SECONDS)
+    due = list(
+        db.scalars(
+            select(Assignment).where(
+                Assignment.status == AssignmentStatus.DISPATCHED,
+                Assignment.created_at < threshold,
+            )
+        )
+    )
+    for a in due:
+        complete_assignment(db, a.id, "success")
+    return len(due)
+
+
 def complete_assignment(
     db: Session, assignment_id: uuid.UUID, outcome: str = "success"
 ) -> Optional[Assignment]:
