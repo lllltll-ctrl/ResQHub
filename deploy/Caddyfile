@@ -1,0 +1,14 @@
+# Прод на домені resqhub.systems.
+# Caddy автоматично бере безкоштовний HTTPS-сертифікат (Let's Encrypt),
+# редіректить http→https і дає wss «з коробки».
+# Усе під /api/* (включно з WebSocket /api/ws/stream) — на backend,
+# решта — на frontend (Next.js). Єдиний origin, тож CORS не потрібен.
+resqhub.systems {
+	@api path /api/*
+	handle @api {
+		reverse_proxy backend:8000
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

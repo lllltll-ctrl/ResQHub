@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
-import { WS_BASE } from "@/lib/config";
+import { wsUrl } from "@/lib/config";
 import type {
   DashboardSummary,
   ObjectState,
@@ -52,7 +52,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
 
     function connectWs() {
-      const ws = new WebSocket(`${WS_BASE}/api/ws/stream`);
+      const ws = new WebSocket(wsUrl("/api/ws/stream"));
       wsRef.current = ws;
 
       ws.onopen = () => setWsConnected(true);

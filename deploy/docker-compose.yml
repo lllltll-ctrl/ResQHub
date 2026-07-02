@@ -1,0 +1,64 @@
+# ResQHub — прод-стек на одному дроплеті DigitalOcean.
+# Caddy (80/443) — єдиний вхід; backend і frontend не публікують портів назовні.
+#
+# Запуск:   cd /opt/orbit/deploy && docker compose up -d --build
+# Логи:     docker compose logs -f
+# Оновлення: docker compose up -d --build <service>
+#
+# Після отримання домену:
+#   1) A-запис домену → IP дроплета
+#   2) у Caddyfile заміни ":80" на "домен.tech"
+#   3) у frontend.build.args зміни http/ws → https/wss + домен
+#   4) docker compose up -d --build frontend caddy
+
+services:
+  backend:
+    build:
+      context: ../backend
+    environment:
+      DATABASE_URL: "sqlite:////data/resqhub.db"
+      CORS_ORIGINS: "https://resqhub.systems,http://resqhub.systems,http://64.226.67.86,http://localhost:3000"
+    volumes:
+      - dbdata:/data
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  frontend:
+    # Без NEXT_PUBLIC_* — фронт бере API/WS із поточного origin у рантаймі,
+    # тож той самий образ працює на будь-якому домені/протоколі.
+    build:
+      context: ../frontend
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  simulator:
+    build:
+      context: ../simulator
+    environment:
+      BACKEND_URL: "http://backend:8000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+volumes:
+  dbdata:
+  caddy_data:
+  caddy_config:

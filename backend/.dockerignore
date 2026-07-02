@@ -1,0 +1,13 @@
+.venv
+**/__pycache__
+*.pyc
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+.env
+.env.local
+.pytest_cache
+tests
+app/ml/artifacts/*.joblib
+app/ml/artifacts/*.meta.json
