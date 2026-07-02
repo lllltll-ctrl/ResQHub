@@ -249,6 +249,29 @@ def routing(db: Session = Depends(get_db), limit: int = 5):
     return orchestrator.get_routing_recommendations(db, limit=limit)
 
 
+# ---------- Counterfactual (What-if) ----------
+@router.get("/counterfactual/{object_id}")
+def counterfactual(
+    object_id: uuid.UUID,
+    intervention: str = "generator",
+    eta_min: int = 30,
+    db: Session = Depends(get_db),
+):
+    """What-if: як зміниться ML-score об'єкта, якщо направити ресурс ЗАРАЗ.
+
+    intervention: generator | fuel | starlink | tech_team | evacuation.
+    Повертає before/after score+status+ttc, топ-зміни фіч (SHAP delta)
+    і людино-читабельну рекомендацію. Дозволяє оператору побачити ефект
+    ДО відправки техніки.
+    """
+    result = orchestrator.run_counterfactual_for_object(
+        db, object_id, intervention_type=intervention, eta_min=eta_min
+    )
+    if result is None:
+        raise HTTPException(404, "Object not found or no telemetry")
+    return result
+
+
 # ---------- Assignments ----------
 @router.post(
     "/assignments", response_model=AssignmentOut, status_code=status.HTTP_201_CREATED
@@ -482,12 +505,15 @@ async def broadcast_event_loop() -> AsyncGenerator[None, None]:
     last_event_ts = datetime.now(timezone.utc).replace(tzinfo=None)
     while True:
         await asyncio.sleep(3)
-        if not manager.active:
-            continue
         db = SessionLocal()
         try:
-            # Серверне автозавершення доставок (не залежить від вкладки клієнта)
+            # Серверне автозавершення доставок — виконуємо ЗАВЖДИ, навіть коли
+            # немає жодного активного WS-клієнта. Інакше доставки «зависали» б
+            # у статусі RESCUE_IN_TRANSIT, поки хтось не відкриє вкладку.
             orchestrator.auto_complete_due_assignments(db)
+            # Далі — лише якщо є кому слати snapshot (економимо CPU).
+            if not manager.active:
+                continue
             summary = orchestrator.get_dashboard_summary(db)
             objects_state = orchestrator.get_objects_with_state(db)
             active_assignments = orchestrator.get_active_assignments(db)

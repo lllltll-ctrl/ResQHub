@@ -12,7 +12,12 @@ import { HeaderActions } from "@/components/HeaderActions";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { RESOURCE_TYPE_UA, SCENARIO_TYPE_UA } from "@/lib/types";
 import Link from "next/link";
-import type { ObjectState, ResourceTypeT } from "@/lib/types";
+import type {
+  Counterfactual,
+  InterventionTypeT,
+  ObjectState,
+  ResourceTypeT,
+} from "@/lib/types";
 import { buildOperatorBrief } from "@/lib/recommendations";
 
 // ── Парк техніки та логістика ────────────────────────────────────────
@@ -54,6 +59,203 @@ async function fetchRoad(
     /* fallback нижче */
   }
   return [from, to];
+}
+
+// Рекомендований ресурс → тип втручання для ML-counterfactual.
+// BATTERY_BANK найближче моделюється як тимчасове живлення (generator effect).
+const INTERVENTION_BY_RESOURCE: Record<string, InterventionTypeT> = {
+  GENERATOR: "generator",
+  BATTERY_BANK: "generator",
+  FUEL: "fuel",
+  STARLINK: "starlink",
+  TECH_TEAM: "tech_team",
+  EVACUATION: "evacuation",
+};
+
+const INTERVENTION_LABEL_UA: Record<InterventionTypeT, string> = {
+  generator: "генератор",
+  fuel: "паливо",
+  starlink: "Starlink",
+  tech_team: "техбригаду",
+  evacuation: "евакуацію",
+};
+
+const CF_STATUS_UA: Record<string, string> = {
+  STABLE: "Стабільно",
+  WARNING: "Увага",
+  CRITICAL: "Критично",
+  RESCUE_IN_TRANSIT: "Допомога в дорозі",
+};
+
+const CF_FEATURE_UA: Record<string, string> = {
+  battery_pct: "Заряд батареї",
+  battery_est_hours: "Автономність",
+  power_on: "Мережа",
+  generator_on: "Генератор",
+  has_generator: "Наявність генератора",
+  has_starlink: "Наявність Starlink",
+  internet_on: "Зв'язок",
+  signal: "Сигнал",
+  co2_ppm: "CO₂",
+  temp_c: "Температура",
+  occupancy_ratio: "Заповненість",
+  humidity_pct: "Вологість",
+  criticality: "Критичність",
+};
+
+function cfStatusColor(s: string): string {
+  return s === "STABLE"
+    ? "#4ae176"
+    : s === "WARNING"
+      ? "#df7412"
+      : s === "CRITICAL"
+        ? "#ffb4ab"
+        : "#8ab4ff";
+}
+
+// Панель «Що-якщо»: показує ML-прогноз score ДО/ПІСЛЯ втручання, ще до
+// відправки техніки. Робить видимою складову AI (RandomForest + SHAP).
+function WhatIfPanel({
+  objectId,
+  intervention,
+  currentScore,
+  currentStatus,
+}: {
+  objectId: string;
+  intervention: InterventionTypeT;
+  currentScore: number;
+  currentStatus: string;
+}) {
+  const [data, setData] = useState<Counterfactual | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError(false);
+    setData(null);
+    api
+      .counterfactual(objectId, intervention)
+      .then((cf) => {
+        if (alive) {
+          setData(cf);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setError(true);
+          setLoading(false);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [objectId, intervention]);
+
+  if (error) return null;
+
+  const label = INTERVENTION_LABEL_UA[intervention] ?? intervention;
+
+  return (
+    <div className="bg-[#0e1826] p-4 rounded-lg border border-primary/20" data-testid="whatif-panel">
+      <div className="flex items-center gap-2 mb-3 text-primary">
+        <i className="material-symbols-outlined text-[20px]">science</i>
+        <h4 className="font-bold text-[12px] uppercase tracking-wider">
+          ML-прогноз «Що-якщо»
+        </h4>
+      </div>
+      {loading || !data ? (
+        <div className="text-[13px] text-on-surface-variant animate-pulse">
+          Модель рахує ефект…
+        </div>
+      ) : (
+        <>
+          <div className="text-[13px] text-on-surface-variant mb-3">
+            Якщо направити{" "}
+            <span className="text-on-surface font-semibold">{label}</span>:
+          </div>
+          <div className="flex items-center justify-center gap-4 mb-3">
+            <div className="text-center">
+              <div className="text-[10px] uppercase tracking-wider text-on-surface-variant mb-1">
+                Зараз
+              </div>
+              <div
+                className="font-[DM_Sans] text-[32px] font-bold leading-none"
+                style={{ color: cfStatusColor(currentStatus) }}
+              >
+                {Math.round(currentScore)}
+              </div>
+              <div
+                className="text-[11px] mt-1"
+                style={{ color: cfStatusColor(currentStatus) }}
+              >
+                {CF_STATUS_UA[currentStatus] ?? currentStatus}
+              </div>
+            </div>
+            <i className="material-symbols-outlined text-on-surface-variant text-[28px]">
+              arrow_forward
+            </i>
+            <div className="text-center">
+              <div className="text-[10px] uppercase tracking-wider text-on-surface-variant mb-1">
+                Після
+              </div>
+              <div
+                className="font-[DM_Sans] text-[32px] font-bold leading-none"
+                style={{ color: cfStatusColor(data.after.status) }}
+              >
+                {Math.max(0, Math.min(100, Math.round(currentScore + data.score_delta)))}
+              </div>
+              <div
+                className="text-[11px] mt-1"
+                style={{ color: cfStatusColor(data.after.status) }}
+              >
+                {CF_STATUS_UA[data.after.status] ?? data.after.status}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-center gap-2 text-[13px]">
+            <span
+              className="font-mono font-bold"
+              style={{ color: data.score_delta >= 0 ? "#4ae176" : "#ffb4ab" }}
+            >
+              {data.score_delta > 0 ? "+" : ""}
+              {Math.round(data.score_delta)} балів
+            </span>
+            {data.will_rescue && (
+              <span className="bg-secondary/15 text-secondary text-[11px] font-bold px-2 py-0.5 rounded-full border border-secondary/30 flex items-center gap-1">
+                <i className="material-symbols-outlined text-[13px]">verified</i>
+                виводить з ризику
+              </span>
+            )}
+          </div>
+          {data.top_feature_changes?.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-white/10 flex flex-col gap-1">
+              {data.top_feature_changes.slice(0, 3).map((f) => (
+                <div
+                  key={f.feature}
+                  className="flex justify-between text-[11px] text-on-surface-variant font-mono"
+                >
+                  <span>{CF_FEATURE_UA[f.feature] ?? f.feature}</span>
+                  <span
+                    style={{ color: f.delta >= 0 ? "#4ae176" : "#ffb4ab" }}
+                  >
+                    {f.delta > 0 ? "+" : ""}
+                    {f.delta.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-3 text-[10px] text-on-surface-variant/60 flex items-center gap-1">
+            <i className="material-symbols-outlined text-[12px]">psychology</i>
+            RandomForest score · SHAP-пояснення
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function OperationsPage() {
@@ -619,6 +821,10 @@ function ObjectDrawer({
     critical: "bg-error-container/20 border-error/40 text-error",
   }[brief.urgency];
 
+  // Для панелі «Що-якщо»: мапимо рекомендований ресурс у тип втручання ML.
+  const cfIntervention: InterventionTypeT =
+    INTERVENTION_BY_RESOURCE[brief.suggestedResource ?? "GENERATOR"] ?? "generator";
+
   return (
     <aside className="fixed right-0 top-16 h-[calc(100vh-4rem)] w-[26rem] max-w-[calc(100vw-2rem)] z-[60] p-[24px] bg-surface-container-high/95 backdrop-blur-xl border-l border-outline-variant/30 shadow-2xl flex flex-col animate-slide-in-right">
       <div className="flex justify-between items-start mb-6">
@@ -730,6 +936,16 @@ function ObjectDrawer({
               {Math.round(ttc)} хв до критичного
             </div>
           </div>
+        )}
+
+        {/* What-if — ML-прогноз ефекту ресурсу ДО відправки */}
+        {(status === "WARNING" || status === "CRITICAL") && (
+          <WhatIfPanel
+            objectId={object.id}
+            intervention={cfIntervention}
+            currentScore={score}
+            currentStatus={status}
+          />
         )}
 
         {/* Resource buttons */}

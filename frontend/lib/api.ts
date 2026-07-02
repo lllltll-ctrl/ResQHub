@@ -4,7 +4,9 @@ import type {
   Assignment,
   BoltEvent,
   CityObject,
+  Counterfactual,
   DashboardSummary,
+  InterventionTypeT,
   ObjectState,
   PublicObject,
   RoutingRecommendation,
@@ -35,6 +37,15 @@ export const api = {
   dashboardFull: () => getJson<ObjectState[]>("/api/dashboard/full"),
 
   routing: (limit = 5) => getJson<RoutingRecommendation[]>(`/api/routing?limit=${limit}`),
+
+  counterfactual: (
+    object_id: string,
+    intervention: InterventionTypeT = "generator",
+    eta_min = 30,
+  ) =>
+    getJson<Counterfactual>(
+      `/api/counterfactual/${object_id}?intervention=${intervention}&eta_min=${eta_min}`,
+    ),
 
   assignments: () => getJson<Assignment[]>("/api/assignments"),
   createAssignment: (object_id: string, resource_type: string, eta_min = 30) =>

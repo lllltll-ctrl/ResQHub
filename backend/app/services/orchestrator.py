@@ -95,6 +95,31 @@ def estimate_backup_hours(obj: Object, battery_pct: float, occupancy: int) -> fl
     energy_wh = obj.battery_capacity_wh * max(0.0, battery_pct) / 100.0
     return round(energy_wh / max(load_w, 1.0), 2)
 
+
+# Скільки часу блекаут «уже триває» на момент, коли диспетчер його бачить.
+# Реальні відключення сповіщаються не миттєво — тож на старті сценарію
+# об'єкти вже трохи просіли, і кожен зі СВОЄЮ швидкістю (навантаження /
+# ємність). Це дає негайну диференціацію на карті навіть БЕЗ симулятора:
+# швидкі об'єкти одразу жовтіють/червоніють, повільні лишаються зеленими.
+BLACKOUT_ELAPSED_HOURS = 0.4
+
+
+def blackout_initial_battery(
+    obj: Object, battery_pct: float, occupancy: int
+) -> float:
+    """Стартовий заряд об'єкта без генератора на момент показу блекауту.
+
+    Просідання = навантаження(тип + люди) × час_блекауту / ємність_батареї.
+    Об'єкт з малою батареєю і великим навантаженням просяде помітно,
+    великий акумулятор — майже ні. Фізично чесно, не «магічна» константа.
+    """
+    base = _BASE_LOAD_W.get(obj.type.value, 800.0)
+    load_w = base + occupancy * _LOAD_PER_PERSON_W
+    drained_pct = (
+        load_w * BLACKOUT_ELAPSED_HOURS / max(obj.battery_capacity_wh, 1.0) * 100.0
+    )
+    return round(max(3.0, battery_pct - drained_pct), 1)
+
 _RESOURCE_TYPE_UA = {
     "GENERATOR": "Генератор",
     "BATTERY_BANK": "Батарея",
@@ -808,10 +833,15 @@ def _apply_scenario_immediately(db: Session, scenario: Scenario) -> None:
                 battery_pct = base_battery
                 battery_est_hours = _GENERATOR_FUEL_HOURS.get(obj.type.value, 8.0)
             else:
+                # Без генератора: блекаут уже триває → об'єкт стартує зі
+                # СВОЇМ просіданням заряду. Дає миттєву диференціацію статусів
+                # (WARNING/CRITICAL) на карті одразу, без очікування симулятора.
                 generator_on = False
-                battery_pct = base_battery
-                battery_est_hours = estimate_backup_hours(
+                battery_pct = blackout_initial_battery(
                     obj, base_battery, base_occupancy
+                )
+                battery_est_hours = estimate_backup_hours(
+                    obj, battery_pct, base_occupancy
                 )
             internet_on = obj.has_starlink
             signal = 3 if obj.has_starlink else 1
