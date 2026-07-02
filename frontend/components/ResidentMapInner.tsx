@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import L from "leaflet";
 import type { PublicObject, StatusT } from "@/lib/types";
+import type { RoadRoute } from "@/lib/osrm";
+import { walkMinutes } from "@/lib/osrm";
 
 const statusColor: Record<string, string> = {
   STABLE: "#4ae176",
@@ -91,6 +93,7 @@ export default function ResidentMapInner({
   selectedId,
   onSelect,
   className,
+  roadRoutes,
 }: {
   objects: PublicObject[];
   userLat: number;
@@ -98,8 +101,12 @@ export default function ResidentMapInner({
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   className?: string;
+  roadRoutes?: Record<string, RoadRoute>;
 }) {
   const selected = objects.find((o) => o.id === selectedId) ?? (objects.length > 0 ? objects[0] : null);
+  // Геометрія дороги до обраного пункту (OSRM). Якщо ще не завантажилась —
+  // фолбек на пряму лінію.
+  const routeCoords = selected ? roadRoutes?.[selected.id]?.coords : undefined;
 
   return (
     <MapContainer
@@ -118,14 +125,18 @@ export default function ResidentMapInner({
         </Popup>
       </Marker>
 
-      {/* Path to selected */}
+      {/* Шлях до обраного пункту: по дорогах (OSRM), або пряма як фолбек */}
       {selected && (
         <Polyline
-          positions={[
-            [userLat, userLon],
-            [selected.lat, selected.lon],
-          ]}
-          pathOptions={{ color: "#4d8eff", weight: 3, dashArray: "5, 10", opacity: 0.7 }}
+          positions={
+            routeCoords && routeCoords.length >= 2
+              ? routeCoords
+              : [
+                  [userLat, userLon],
+                  [selected.lat, selected.lon],
+                ]
+          }
+          pathOptions={{ color: "#4d8eff", weight: 4, opacity: 0.85 }}
         />
       )}
 
@@ -145,7 +156,7 @@ export default function ResidentMapInner({
               <div className="text-xs opacity-70 mb-2">{obj.address}</div>
               <div className="flex items-center gap-2 mb-2 text-xs">
                 <i className="material-symbols-outlined text-[14px]">directions_walk</i>
-                {Math.round((obj.distance_m ?? 0) / 80)} хв пішки
+                {walkMinutes(roadRoutes?.[obj.id]?.distanceM ?? obj.distance_m ?? 0)} хв пішки
               </div>
               <div className="grid grid-cols-2 gap-1 mt-2 text-xs font-mono">
                 <span>{obj.power_on ? '⚡ Увімк.' : '❌ Вимк.'}</span>

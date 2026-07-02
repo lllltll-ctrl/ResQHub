@@ -18,6 +18,7 @@ import type {
   ObjectState,
   ResourceTypeT,
 } from "@/lib/types";
+import { MobileNav } from "@/components/MobileNav";
 import { buildOperatorBrief } from "@/lib/recommendations";
 
 // ── Парк техніки та логістика ────────────────────────────────────────
@@ -482,38 +483,38 @@ function OperationsShell() {
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Top nav */}
-      <nav className="fixed top-0 left-0 w-full z-50 flex justify-between items-center h-16 px-[24px] bg-surface-container/80 backdrop-blur-md border-b border-outline-variant/20 shadow-sm">
-        <div className="flex items-center gap-6">
+      <nav className="fixed top-0 left-0 w-full z-50 flex justify-between items-center h-16 px-3 md:px-[24px] bg-surface-container/80 backdrop-blur-md border-b border-outline-variant/20 shadow-sm">
+        <div className="flex items-center gap-3 md:gap-6">
           <span className="text-[20px] font-bold text-primary tracking-tight font-[DM_Sans]">ResQHub</span>
-          <div className="h-6 w-px bg-outline-variant/30" />
-          <div className="flex items-center gap-3 text-body-md text-on-surface-variant font-medium">
+          <div className="hidden sm:block h-6 w-px bg-outline-variant/30" />
+          <div className="hidden sm:flex items-center gap-3 text-body-md text-on-surface-variant font-medium">
             <span className="text-primary font-bold border-b-2 border-primary pb-1 flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Операційна</span>
             <Link href="/analytics" className="flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Аналітика</Link>
             <Link href="/resident" className="flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Жителю</Link>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="font-mono text-[14px] text-on-surface-variant bg-surface-container-high px-3 py-1.5 rounded border border-outline-variant/20">
+        <div className="flex items-center gap-2 md:gap-4">
+          <div className="hidden md:block font-mono text-[14px] text-on-surface-variant bg-surface-container-high px-3 py-1.5 rounded border border-outline-variant/20">
             {clock || "—"}
           </div>
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-secondary animate-pulse-dot' : 'bg-error'}`} />
-            <span className="text-xs text-on-surface-variant font-mono">{wsConnected ? 'НАЖИВО' : 'ОФЛАЙН'}</span>
+            <span className="hidden sm:inline text-xs text-on-surface-variant font-mono">{wsConnected ? 'НАЖИВО' : 'ОФЛАЙН'}</span>
           </div>
-          <div className="h-6 w-px bg-outline-variant/30" />
+          <div className="hidden sm:block h-6 w-px bg-outline-variant/30" />
           <button
             onClick={() => handleScenario("BLACKOUT")}
-            className="bg-error-container text-on-error-container px-4 py-2 rounded font-bold text-[12px] uppercase tracking-wider hover:bg-error hover:text-on-error transition-colors flex items-center gap-2 glow-red"
+            className="bg-error-container text-on-error-container px-3 md:px-4 py-2 rounded font-bold text-[12px] uppercase tracking-wider hover:bg-error hover:text-on-error transition-colors flex items-center gap-2 glow-red"
           >
             <i className="material-symbols-outlined text-[16px]">warning</i>
-            Симулювати блекаут
+            <span className="hidden sm:inline">Симулювати блекаут</span>
           </button>
           <button
             onClick={() => handleScenario("RESET")}
-            className="border border-outline-variant text-on-surface-variant px-4 py-2 rounded font-bold text-[12px] uppercase tracking-wider hover:bg-surface-container-high hover:text-on-surface transition-colors flex items-center gap-2"
+            className="border border-outline-variant text-on-surface-variant px-3 md:px-4 py-2 rounded font-bold text-[12px] uppercase tracking-wider hover:bg-surface-container-high hover:text-on-surface transition-colors flex items-center gap-2"
           >
             <i className="material-symbols-outlined text-[16px]">refresh</i>
-            Скинути
+            <span className="hidden sm:inline">Скинути</span>
           </button>
         </div>
       </nav>
@@ -604,7 +605,19 @@ function OperationsShell() {
         </aside>
 
         {/* Center — map + table */}
-        <main className="flex-1 flex flex-col relative bg-[#0b0e15]">
+        <main className="flex-1 flex flex-col relative bg-[#0b0e15] min-w-0">
+          {/* Mobile KPI strip — на телефоні ліва панель прихована */}
+          <div className="md:hidden flex gap-2 overflow-x-auto p-2 bg-[#111827] border-b border-outline-variant/20 shrink-0">
+            <MiniKpi label="Індекс" value={Math.round(summary?.avg_city_score ?? 0)} />
+            <MiniKpi label="Стабіль" value={stable} accent="ok" />
+            <MiniKpi label="Увага" value={warning} accent="warn" />
+            <MiniKpi label="Критичні" value={critical} accent="crit" />
+            <MiniKpi
+              label="<1 год"
+              value={routing.filter((r) => r.time_to_critical_min !== null && r.time_to_critical_min < 60).length}
+              accent="warn"
+            />
+          </div>
           {/* Map area */}
           <div className="flex-1 relative border-b border-outline-variant/20 overflow-hidden">
             <CityMap
@@ -636,7 +649,7 @@ function OperationsShell() {
                 <h2 className="font-semibold text-[20px] text-on-surface">Об&apos;єкти ({total})</h2>
               </div>
             </div>
-            <div className="flex-1 overflow-auto bg-[#111827]">
+            <div className="flex-1 overflow-auto bg-[#111827] pb-14 md:pb-0">
               <ObjectTable objects={objects} onSelect={setSelectedObjectId} selectedId={selectedObjectId} />
             </div>
           </div>
@@ -658,6 +671,35 @@ function OperationsShell() {
           onAssign={handleAssign}
         />
       )}
+
+      <MobileNav />
+    </div>
+  );
+}
+
+function MiniKpi({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent?: "ok" | "warn" | "crit";
+}) {
+  const color =
+    accent === "ok"
+      ? "text-secondary"
+      : accent === "warn"
+        ? "text-tertiary"
+        : accent === "crit"
+          ? "text-error"
+          : "text-on-surface";
+  return (
+    <div className="flex flex-col items-center justify-center min-w-[64px] px-3 py-1.5 rounded-lg bg-surface-container-high/40 border border-white/5 shrink-0">
+      <span className={`font-[DM_Sans] text-[22px] font-bold leading-none ${color}`}>{value}</span>
+      <span className="text-[10px] uppercase tracking-wider text-on-surface-variant mt-0.5 whitespace-nowrap">
+        {label}
+      </span>
     </div>
   );
 }
@@ -697,11 +739,11 @@ function ObjectTable({
       <thead className="sticky top-0 bg-[#111827] z-10 border-b border-outline-variant/20 uppercase text-[12px] uppercase tracking-wider text-on-surface-variant">
         <tr>
           <th className="py-3 px-4 font-bold">Назва</th>
-          <th className="py-3 px-4 font-bold">Тип</th>
+          <th className="py-3 px-4 font-bold hidden sm:table-cell">Тип</th>
           <th className="py-3 px-4 font-bold">Статус</th>
           <th className="py-3 px-4 font-bold">Заряд</th>
           <th className="py-3 px-4 font-bold text-right">Бал</th>
-          <th className="py-3 px-4 font-bold text-right">Заповненість</th>
+          <th className="py-3 px-4 font-bold text-right hidden sm:table-cell">Заповненість</th>
         </tr>
       </thead>
       <tbody className="text-[14px] text-on-surface">
@@ -722,7 +764,7 @@ function ObjectTable({
               }
             >
               <td className="py-3 px-4 font-medium group-hover:text-primary transition-colors">{o.name}</td>
-              <td className="py-3 px-4 text-on-surface-variant text-xs uppercase tracking-wider">
+              <td className="py-3 px-4 text-on-surface-variant text-xs uppercase tracking-wider hidden sm:table-cell">
                 {o.type === "SHELTER" ? "Укриття" :
                   o.type === "SCHOOL" ? "Школа" :
                   o.type === "RESILIENCE_POINT" ? "П. Незламн." :
@@ -752,7 +794,7 @@ function ObjectTable({
               <td className="py-3 px-4 text-right font-mono text-[14px] font-medium">
                 {Math.round(score)}
               </td>
-              <td className="py-3 px-4 text-right font-mono text-[14px] text-on-surface-variant">
+              <td className="py-3 px-4 text-right font-mono text-[14px] text-on-surface-variant hidden sm:table-cell">
                 {occ}/{cap}
               </td>
             </tr>
@@ -842,7 +884,7 @@ function ObjectDrawer({
           </button>
         </div>
       </div>
-      <div className="flex flex-col gap-6 overflow-y-auto">
+      <div className="flex flex-col gap-6 overflow-y-auto pb-16 md:pb-0">
         <div className="flex items-center gap-3 border-b border-outline-variant/20 pb-4">
           <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${statusColorClass}`}>
             <i className="material-symbols-outlined text-[24px]">{icon}</i>

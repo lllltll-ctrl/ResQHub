@@ -6,6 +6,8 @@ import type { PublicObject, StatusT } from "@/lib/types";
 import Link from "next/link";
 import { ResidentMap } from "@/components/ResidentMap";
 import { StatusPill } from "@/components/ui/StatusPill";
+import { MobileNav } from "@/components/MobileNav";
+import { fetchRoadRoute, walkMinutes, type RoadRoute } from "@/lib/osrm";
 
 // Сторінка мешканця самодостатня: тягне лише /api/public/objects.
 // Раніше була обгорнута в RealtimeProvider, який на кожному вході робив
@@ -24,6 +26,8 @@ function ResidentShell() {
   const [loading, setLoading] = useState(true);
   const [infoModal, setInfoModal] = useState<null | "privacy" | "support" | "protocol">(null);
   const [menuOpen, setMenuOpen] = useState<"notif" | "profile" | null>(null);
+  // Дорожній маршрут (відстань + геометрія) по кожному пункту з OSRM.
+  const [roadRoutes, setRoadRoutes] = useState<Record<string, RoadRoute>>({});
 
   useEffect(() => {
     // Try to get geolocation
@@ -56,6 +60,40 @@ function ResidentShell() {
     return () => clearInterval(interval);
   }, [position]);
 
+  // Позиція змінилась → дорожні відстані більше не актуальні, скидаємо.
+  useEffect(() => {
+    setRoadRoutes({});
+  }, [position.lat, position.lon]);
+
+  // Тягнемо РЕАЛЬНУ дорожню геометрію (OSRM) для всіх пунктів. Кеш у osrm.ts
+  // робить повторні виклики миттєвими, тож перезапуск ефекту дешевий; стан
+  // оновлюємо одним batch'ем — стійко до StrictMode.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        objects.map(
+          async (o) =>
+            [o.id, await fetchRoadRoute(position.lat, position.lon, o.lat, o.lon)] as const,
+        ),
+      );
+      if (cancelled) return;
+      setRoadRoutes((prev) => {
+        const next = { ...prev };
+        for (const [id, route] of entries) if (route) next[id] = route;
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [objects, position.lat, position.lon]);
+
+  // Відстань і час пішки для пункту: дорожня відстань, поки не завантажилась —
+  // фолбек на пряму (щоб UI не був порожнім), час — за швидкістю ходьби.
+  const distanceFor = (o: PublicObject): number =>
+    roadRoutes[o.id]?.distanceM ?? o.distance_m ?? 0;
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -84,7 +122,7 @@ function ResidentShell() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-grid animate-fade-in-up">
+    <div className="flex flex-col min-h-screen bg-grid animate-fade-in-up pb-14 md:pb-0">
       {/* Top nav */}
       <nav className="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-white/10 shadow-sm flex justify-between items-center h-16 px-[32px]">
         <div className="flex items-center gap-6">
@@ -205,6 +243,7 @@ function ResidentShell() {
                 userLon={position.lon}
                 selectedId={selectedId ?? undefined}
                 onSelect={setSelectedId}
+                roadRoutes={roadRoutes}
                 className="absolute inset-0 w-full h-full"
               />
 
@@ -243,7 +282,7 @@ function ResidentShell() {
                     </div>
                     <div className="text-sm text-outline mt-1 flex items-center gap-1 text-on-surface-variant">
                       <i className="material-symbols-outlined text-[16px]">directions_walk</i>
-                      {Math.round((selectedObject.distance_m ?? 0) / 80)} хв пішки · {selectedObject.distance_m} м
+                      {walkMinutes(distanceFor(selectedObject))} хв пішки · {distanceFor(selectedObject)} м
                     </div>
                   </div>
                   <div className="bg-secondary/20 text-secondary px-3 py-1 rounded-full font-bold text-[12px] uppercase tracking-wider border border-secondary/30">
@@ -289,7 +328,7 @@ function ResidentShell() {
                     </div>
                     <div className="text-xs text-on-surface-variant flex items-center justify-between">
                       <span className="truncate max-w-[180px]">{o.address}</span>
-                      <span className="font-mono bg-surface-bright/20 px-1.5 py-0.5 rounded">{Math.round((o.distance_m ?? 0) / 80)} хв</span>
+                      <span className="font-mono bg-surface-bright/20 px-1.5 py-0.5 rounded">{walkMinutes(distanceFor(o))} хв</span>
                     </div>
                   </div>
                 ))}
@@ -391,6 +430,8 @@ function ResidentShell() {
           </div>
         </div>
       )}
+
+      <MobileNav />
     </div>
   );
 }

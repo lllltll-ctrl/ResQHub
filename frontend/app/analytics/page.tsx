@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { RealtimeProvider } from "@/components/RealtimeProvider";
 import { HeaderActions } from "@/components/HeaderActions";
+import { MobileNav } from "@/components/MobileNav";
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import Link from "next/link";
@@ -35,6 +36,8 @@ function relativeTime(ts: string): string {
 function AnalyticsShell() {
   const { summary, objects } = useStore();
   const [forecast, setForecast] = useState<HistoricalData[]>([]);
+  // Діапазон часу для графіка (хв). SESSION = уся зібрана історія сесії.
+  const [rangeMin, setRangeMin] = useState<number>(60);
   // Аналітика тримає ПОВНУ історію подій (незалежно від оперативного
   // журналу на операційній сторінці, який очищається).
   const [history, setHistory] = useState<BoltEvent[]>([]);
@@ -67,11 +70,13 @@ function AnalyticsShell() {
         // точний timestamp — а вони в об'єктів не збігаються, тож кожна
         // «точка» була балом одного об'єкта → шумна беззмістовна крива.
         // Тепер кожна точка = середній бал міста за цю хвилину.
+        // Скільки рядків score тягнути під обраний діапазон (12 тіків/хв).
+        const fetchLimit = rangeMin >= 100000 ? 500 : Math.min(500, rangeMin * 12 + 12);
         const bucket: Record<number, number[]> = {};
         await Promise.all(
           objects.map(async (o) => {
             try {
-              const scores = await api.scores(o.id, 60);
+              const scores = await api.scores(o.id, fetchLimit);
               for (const s of scores) {
                 const minute = Math.floor(new Date(s.ts).getTime() / 60000);
                 (bucket[minute] ??= []).push(s.score);
@@ -87,8 +92,11 @@ function AnalyticsShell() {
             t: new Date(Number(minute) * 60000),
             value: scores.reduce((a, b) => a + b, 0) / scores.length,
           }))
+          .filter(
+            (d) => rangeMin >= 100000 || d.t.getTime() >= Date.now() - rangeMin * 60000,
+          )
           .sort((a, b) => a.t.getTime() - b.t.getTime())
-          .slice(-20);
+          .slice(-80);
         setForecast(data);
       } catch (e) {
         console.error("[analytics] trend load failed:", e);
@@ -100,7 +108,7 @@ function AnalyticsShell() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [objects]);
+  }, [objects, rangeMin]);
 
   const districts = Array.from(new Set(objects.map((o) => o.district)));
   const districtStats = districts.map((d) => {
@@ -164,8 +172,8 @@ function AnalyticsShell() {
       <nav className="fixed top-0 left-0 w-full z-50 flex justify-between items-center h-16 px-[24px] bg-surface-container/80 backdrop-blur-md border-b border-outline-variant/20 shadow-sm">
         <div className="flex items-center gap-6">
           <span className="text-[20px] font-bold text-primary tracking-tight font-[DM_Sans]">ResQHub</span>
-          <div className="h-6 w-px bg-outline-variant/30" />
-          <div className="flex items-center gap-3 text-body-md text-on-surface-variant font-medium">
+          <div className="hidden sm:block h-6 w-px bg-outline-variant/30" />
+          <div className="hidden sm:flex items-center gap-3 text-body-md text-on-surface-variant font-medium">
             <Link href="/operations" className="flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Операційна</Link>
             <span className="text-primary font-bold border-b-2 border-primary pb-1 flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Аналітика</span>
             <Link href="/resident" className="flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Жителю</Link>
@@ -177,7 +185,7 @@ function AnalyticsShell() {
       </nav>
 
       {/* Main */}
-      <main className="flex-1 pt-24 pb-8 px-4 md:px-[32px] overflow-y-auto">
+      <main className="flex-1 pt-24 pb-24 md:pb-8 px-4 md:px-[32px] overflow-y-auto">
         <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
           <div>
             <h2 className="text-[32px] font-semibold text-on-surface tracking-tight font-[DM_Sans]">
@@ -187,14 +195,29 @@ function AnalyticsShell() {
               Телеметрія в реальному часі та прогнозні моделі для інфраструктури Житомира.
             </p>
           </div>
-          <div className="flex gap-3">
-            <button className="px-4 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant text-[14px] hover:bg-surface-bright/20 glass-card flex items-center gap-2">
-              <i className="material-symbols-outlined text-[18px]">calendar_today</i>
-              Останні 7 днів
-            </button>
+          <div className="flex flex-wrap gap-3">
+            <div className="flex rounded-lg border border-outline-variant/30 glass-card overflow-hidden">
+              {[
+                { min: 15, label: "15 хв" },
+                { min: 60, label: "1 год" },
+                { min: 100000, label: "Сесія" },
+              ].map((r) => (
+                <button
+                  key={r.min}
+                  onClick={() => setRangeMin(r.min)}
+                  className={`px-3 py-2 text-[13px] transition-colors ${
+                    rangeMin === r.min
+                      ? "bg-primary-container/20 text-primary font-semibold"
+                      : "text-on-surface-variant hover:bg-surface-bright/20"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
             <Link href="/operations" className="px-4 py-2 rounded-lg bg-primary-container/10 border border-primary text-primary text-[14px] hover:bg-primary-container/20 glow-blue flex items-center gap-2">
               <i className="material-symbols-outlined text-[18px]">dashboard</i>
-              До операційної
+              <span className="hidden sm:inline">До операційної</span>
             </Link>
           </div>
         </header>
@@ -487,6 +510,8 @@ function AnalyticsShell() {
           </div>
         </div>
       </main>
+
+      <MobileNav />
     </div>
   );
 }
