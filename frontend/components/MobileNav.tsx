@@ -13,7 +13,7 @@ const TABS = [
 export function MobileNav() {
   const path = usePathname();
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 w-full z-[70] h-14 bg-surface-container/95 backdrop-blur-xl border-t border-outline-variant/20 flex justify-around items-stretch">
+    <nav className="lg:hidden fixed bottom-0 left-0 w-full z-[70] h-14 bg-surface-container/95 backdrop-blur-xl border-t border-outline-variant/20 flex justify-around items-stretch">
       {TABS.map((t) => {
         const active = path === t.href || (path?.startsWith(t.href) ?? false);
         return (

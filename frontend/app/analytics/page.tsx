@@ -172,8 +172,8 @@ function AnalyticsShell() {
       <nav className="fixed top-0 left-0 w-full z-50 flex justify-between items-center h-16 px-[24px] bg-surface-container/80 backdrop-blur-md border-b border-outline-variant/20 shadow-sm">
         <div className="flex items-center gap-6">
           <span className="text-[20px] font-bold text-primary tracking-tight font-[DM_Sans]">ResQHub</span>
-          <div className="hidden sm:block h-6 w-px bg-outline-variant/30" />
-          <div className="hidden sm:flex items-center gap-3 text-body-md text-on-surface-variant font-medium">
+          <div className="hidden lg:block h-6 w-px bg-outline-variant/30" />
+          <div className="hidden lg:flex items-center gap-3 text-body-md text-on-surface-variant font-medium">
             <Link href="/operations" className="flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Операційна</Link>
             <span className="text-primary font-bold border-b-2 border-primary pb-1 flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Аналітика</span>
             <Link href="/resident" className="flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Жителю</Link>
@@ -185,7 +185,7 @@ function AnalyticsShell() {
       </nav>
 
       {/* Main */}
-      <main className="flex-1 pt-24 pb-24 md:pb-8 px-4 md:px-[32px] overflow-y-auto">
+      <main className="flex-1 pt-24 pb-24 lg:pb-8 px-4 md:px-[32px] overflow-y-auto">
         <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
           <div>
             <h2 className="text-[32px] font-semibold text-on-surface tracking-tight font-[DM_Sans]">

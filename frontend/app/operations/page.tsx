@@ -486,35 +486,35 @@ function OperationsShell() {
       <nav className="fixed top-0 left-0 w-full z-50 flex justify-between items-center h-16 px-3 md:px-[24px] bg-surface-container/80 backdrop-blur-md border-b border-outline-variant/20 shadow-sm">
         <div className="flex items-center gap-3 md:gap-6">
           <span className="text-[20px] font-bold text-primary tracking-tight font-[DM_Sans]">ResQHub</span>
-          <div className="hidden sm:block h-6 w-px bg-outline-variant/30" />
-          <div className="hidden sm:flex items-center gap-3 text-body-md text-on-surface-variant font-medium">
+          <div className="hidden lg:block h-6 w-px bg-outline-variant/30" />
+          <div className="hidden lg:flex items-center gap-3 text-body-md text-on-surface-variant font-medium">
             <span className="text-primary font-bold border-b-2 border-primary pb-1 flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Операційна</span>
             <Link href="/analytics" className="flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Аналітика</Link>
             <Link href="/resident" className="flex items-center gap-2 hover:bg-surface-bright/10 hover:text-primary transition-colors cursor-pointer active:scale-95 duration-100">Жителю</Link>
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
-          <div className="hidden md:block font-mono text-[14px] text-on-surface-variant bg-surface-container-high px-3 py-1.5 rounded border border-outline-variant/20">
+          <div className="hidden lg:block font-mono text-[14px] text-on-surface-variant bg-surface-container-high px-3 py-1.5 rounded border border-outline-variant/20">
             {clock || "—"}
           </div>
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-secondary animate-pulse-dot' : 'bg-error'}`} />
-            <span className="hidden sm:inline text-xs text-on-surface-variant font-mono">{wsConnected ? 'НАЖИВО' : 'ОФЛАЙН'}</span>
+            <span className="hidden lg:inline text-xs text-on-surface-variant font-mono">{wsConnected ? 'НАЖИВО' : 'ОФЛАЙН'}</span>
           </div>
-          <div className="hidden sm:block h-6 w-px bg-outline-variant/30" />
+          <div className="hidden lg:block h-6 w-px bg-outline-variant/30" />
           <button
             onClick={() => handleScenario("BLACKOUT")}
             className="bg-error-container text-on-error-container px-3 md:px-4 py-2 rounded font-bold text-[12px] uppercase tracking-wider hover:bg-error hover:text-on-error transition-colors flex items-center gap-2 glow-red"
           >
             <i className="material-symbols-outlined text-[16px]">warning</i>
-            <span className="hidden sm:inline">Симулювати блекаут</span>
+            <span className="hidden lg:inline">Симулювати блекаут</span>
           </button>
           <button
             onClick={() => handleScenario("RESET")}
             className="border border-outline-variant text-on-surface-variant px-3 md:px-4 py-2 rounded font-bold text-[12px] uppercase tracking-wider hover:bg-surface-container-high hover:text-on-surface transition-colors flex items-center gap-2"
           >
             <i className="material-symbols-outlined text-[16px]">refresh</i>
-            <span className="hidden sm:inline">Скинути</span>
+            <span className="hidden lg:inline">Скинути</span>
           </button>
         </div>
       </nav>
@@ -522,9 +522,9 @@ function OperationsShell() {
       {/* Main three-column grid */}
       <div className="flex flex-1 pt-16 h-screen overflow-hidden animate-fade-in-up">
         {/* Left sidebar — KPIs & resource summary */}
-        <aside className="w-[320px] bg-surface-container-low border-r border-outline-variant/20 flex flex-col p-[24px] gap-4 overflow-y-auto shrink-0 hidden md:flex">
+        <aside className="w-[320px] bg-surface-container-low border-r border-outline-variant/20 flex flex-col p-[24px] gap-4 overflow-y-auto shrink-0 hidden lg:flex">
           {/* City Resilience Index */}
-          <div className="rounded-lg p-[24px] border border-white/5 relative overflow-hidden group bg-[#111827]">
+          <div className="shrink-0 rounded-lg p-[24px] border border-white/5 relative overflow-hidden group bg-[#111827]">
             <div className="absolute -right-12 -top-12 w-32 h-32 bg-secondary/10 rounded-full blur-2xl group-hover:bg-secondary/20 transition-all duration-500" />
             <div className="flex items-center gap-2 mb-4 text-on-surface-variant">
               <i className="material-symbols-outlined text-[20px]">analytics</i>
@@ -571,14 +571,14 @@ function OperationsShell() {
           </div>
 
           {/* Status counters */}
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-3 gap-1 shrink-0">
             <StatCard label="Стабіль" value={stable} accent="ok" />
             <StatCard label="Увага" value={warning} accent="warn" />
             <StatCard label="Критичні" value={critical} accent="crit" />
           </div>
 
           {/* Risk card */}
-          <div className="rounded-lg p-[24px] border border-tertiary-container/30 bg-tertiary-container/5 bg-[#111827]">
+          <div className="shrink-0 rounded-lg p-[24px] border border-tertiary-container/30 bg-tertiary-container/5 bg-[#111827]">
             <div className="flex items-center gap-2 mb-2 text-tertiary-container">
               <i className="material-symbols-outlined text-[20px]">timer</i>
               <h3 className="font-bold text-[12px] uppercase tracking-wider">Під ризиком &lt; 1 год</h3>
@@ -607,7 +607,7 @@ function OperationsShell() {
         {/* Center — map + table */}
         <main className="flex-1 flex flex-col relative bg-[#0b0e15] min-w-0">
           {/* Mobile KPI strip — на телефоні ліва панель прихована */}
-          <div className="md:hidden flex gap-2 overflow-x-auto p-2 bg-[#111827] border-b border-outline-variant/20 shrink-0">
+          <div className="lg:hidden flex gap-2 overflow-x-auto p-2 bg-[#111827] border-b border-outline-variant/20 shrink-0">
             <MiniKpi label="Індекс" value={Math.round(summary?.avg_city_score ?? 0)} />
             <MiniKpi label="Стабіль" value={stable} accent="ok" />
             <MiniKpi label="Увага" value={warning} accent="warn" />
@@ -649,7 +649,7 @@ function OperationsShell() {
                 <h2 className="font-semibold text-[20px] text-on-surface">Об&apos;єкти ({total})</h2>
               </div>
             </div>
-            <div className="flex-1 overflow-auto bg-[#111827] pb-14 md:pb-0">
+            <div className="flex-1 overflow-auto bg-[#111827] pb-14 lg:pb-0">
               <ObjectTable objects={objects} onSelect={setSelectedObjectId} selectedId={selectedObjectId} />
             </div>
           </div>
@@ -884,7 +884,7 @@ function ObjectDrawer({
           </button>
         </div>
       </div>
-      <div className="flex flex-col gap-6 overflow-y-auto pb-16 md:pb-0">
+      <div className="flex flex-col gap-6 overflow-y-auto pb-16 lg:pb-0">
         <div className="flex items-center gap-3 border-b border-outline-variant/20 pb-4">
           <div className={`w-12 h-12 rounded-lg flex items-center justify-center border ${statusColorClass}`}>
             <i className="material-symbols-outlined text-[24px]">{icon}</i>

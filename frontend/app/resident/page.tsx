@@ -122,12 +122,12 @@ function ResidentShell() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-grid animate-fade-in-up pb-14 md:pb-0">
+    <div className="flex flex-col min-h-screen bg-grid animate-fade-in-up pb-14 lg:pb-0">
       {/* Top nav */}
       <nav className="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-white/10 shadow-sm flex justify-between items-center h-16 px-[32px]">
         <div className="flex items-center gap-6">
           <span className="text-[20px] font-bold text-primary tracking-tight font-[DM_Sans]">ResQHub</span>
-          <div className="hidden md:flex gap-4 items-center">
+          <div className="hidden lg:flex gap-4 items-center">
             <Link href="/operations" className="text-on-surface-variant font-medium hover:text-on-surface transition-colors">Операційна</Link>
             <Link href="/analytics" className="text-on-surface-variant font-medium hover:text-on-surface transition-colors">Аналітика</Link>
             <span className="text-primary border-b-2 border-primary font-bold pb-1">Жителю</span>
