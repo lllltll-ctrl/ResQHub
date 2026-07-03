@@ -885,6 +885,31 @@ def _apply_scenario_immediately(db: Session, scenario: Scenario) -> None:
         )
 
 
+def _reset_equipment_to_seed(db: Session) -> None:
+    """Повертає обладнання об'єктів (генератор / Starlink / ємність батареї)
+    до вихідних значень seed.
+
+    Викликається на RESET: доставлений мобільний генератор робить
+    ``obj.has_generator = True`` назавжди. Без цього скидання демо з часом
+    «накопичує» генератори на ВСІХ об'єктах — і блекаут перестає щось міняти
+    (усі одразу переходять на АВР). Тепер кожне «Скинути» повертає початкову
+    диспозицію обладнання, тож демо завжди свіже.
+    """
+    from app.seed import SEED_OBJECTS
+
+    by_name = {s["name"]: s for s in SEED_OBJECTS}
+    for obj in get_objects(db):
+        seed = by_name.get(obj.name)
+        if seed is None:
+            continue
+        obj.has_generator = bool(seed["has_generator"])
+        obj.has_starlink = bool(seed["has_starlink"])
+        obj.battery_capacity_wh = float(
+            seed.get("battery_capacity_wh", obj.battery_capacity_wh)
+        )
+    db.flush()
+
+
 def start_scenario(db: Session, payload: ScenarioCreate) -> Scenario | None:
     # Завершуємо всі активні сценарії
     db.query(Scenario).filter(Scenario.is_active.is_(True)).update(
@@ -910,6 +935,8 @@ def start_scenario(db: Session, payload: ScenarioCreate) -> Scenario | None:
         )
         db.add(sc_reset)
         db.flush()
+        # Скидаємо доставлене обладнання до seed — щоб демо не деградувало.
+        _reset_equipment_to_seed(db)
         _apply_scenario_immediately(db, sc_reset)
         sc_reset.is_active = False
         sc_reset.ended_at = datetime.now(timezone.utc)
