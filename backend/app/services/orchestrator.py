@@ -971,21 +971,116 @@ SCENARIO_TTL_SECONDS = 600  # 10 хвилин — демо TTL
 
 
 def get_active_scenario(db: Session) -> Scenario | None:
-    # Auto-expire: завершити активні сценарії старші за TTL
-    # NOTE: SQLite зберігає tz-naive datetime, тож нормалізуємо до UTC явно
+    # Auto-expire: завершити активні сценарії старші за TTL.
+    # NOTE: SQLite зберігає tz-naive datetime, тож нормалізуємо до UTC явно.
     now = datetime.now(timezone.utc)
     now_naive_utc = now.replace(tzinfo=None)
     threshold_naive = now_naive_utc - timedelta(seconds=SCENARIO_TTL_SECONDS)
 
-    expired_stmt = select(Scenario).where(Scenario.is_active.is_(True))
-    for sc in db.scalars(expired_stmt).all():
-        if sc.started_at < threshold_naive:
-            sc.is_active = False
-            sc.ended_at = now
+    # Атомарний UPDATE: якщо кілька процесів (broadcast loop, симулятор,
+    # frontend-poll) одночасно побачать прострочений сценарій — reset
+    # виконає лише той, чий UPDATE реально зачепив рядки.
+    expired = (
+        db.query(Scenario)
+        .filter(
+            Scenario.is_active.is_(True),
+            Scenario.started_at < threshold_naive,
+        )
+        .update({"is_active": False, "ended_at": now}, synchronize_session=False)
+    )
     db.commit()
+
+    if expired:
+        # Повний авто-RESET: блекаут закінчився за таймером (10 хв) → місто
+        # відновлюється САМЕ, навіть якщо симулятор не запущений. Це рятує
+        # демо від стану «хтось клікнув блекаут і пішов» — через 10 хв сайт
+        # знову зелений і готовий до наступного відвідувача.
+        try:
+            _reset_equipment_to_seed(db)
+            _apply_scenario_immediately(
+                db,
+                Scenario(
+                    type=ScenarioType.RESET,
+                    scope=ScenarioScope.CITY,
+                    target=None,
+                    intensity=1.0,
+                ),
+            )
+            db.add(
+                Event(
+                    type=EventType.SCENARIO_END,
+                    severity=EventSeverity.INFO,
+                    message=(
+                        "Сценарій завершився автоматично (таймер 10 хв). "
+                        "Місто відновлено до нормального режиму."
+                    ),
+                )
+            )
+            db.commit()
+        except Exception:
+            # Частковий reset не страшний: сценарій уже деактивовано, тож
+            # симулятор доведе решту об'єктів до норми звичайними тіками.
+            logger.exception("Auto-reset after scenario TTL failed")
+            try:
+                db.rollback()
+            except Exception:  # noqa: BLE001 — мертва сесія не має валити виклик
+                logger.exception("Rollback after failed auto-reset also failed")
+        return None
 
     stmt = select(Scenario).where(Scenario.is_active.is_(True)).limit(1)
     return db.scalars(stmt).first()
+
+
+# ── Ретенція даних ──────────────────────────────────────────────────
+# Телеметрія йде кожні ~5с з 10 об'єктів → ~350 тис. рядків/добу разом зі
+# scores. Без очищення SQLite виростала на ~190 МБ/день і за 2 доби сервіс
+# деградував (повільні запити, тиск на пам'ять). Хвилинна історія потрібна
+# лише для форкастів (останні 24 точки) та аналітики поточної сесії, тож
+# 24 год — комфортний запас. Події тримаємо довше (журнал/хронологія).
+TELEMETRY_RETENTION_HOURS = 24
+EVENTS_RETENTION_HOURS = 72
+# Невеликий батч → кожна write-транзакція коротка, і паралельні запити
+# (телеметрія симулятора, HTTP) не чекають на довгий write-lock SQLite.
+_PRUNE_BATCH = 5000
+
+
+def prune_old_data(db: Session) -> dict[str, int]:
+    """Видаляє рядки, старші за retention, батчами (без довгих write-lock'ів).
+
+    Викликається з фонового циклу приблизно раз на годину. Розмір БД
+    виходить на плато (~добовий обсяг) замість безмежного росту.
+    """
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    telem_cutoff = now_naive - timedelta(hours=TELEMETRY_RETENTION_HOURS)
+    events_cutoff = now_naive - timedelta(hours=EVENTS_RETENTION_HOURS)
+
+    deleted: dict[str, int] = {"telemetry": 0, "scores": 0, "events": 0}
+    plan = (
+        (Telemetry, telem_cutoff, "telemetry"),
+        (Score, telem_cutoff, "scores"),
+        (Event, events_cutoff, "events"),
+    )
+    for model, cutoff, key in plan:
+        while True:
+            ids = list(
+                db.scalars(
+                    select(model.id).where(model.ts < cutoff).limit(_PRUNE_BATCH)
+                )
+            )
+            if not ids:
+                break
+            db.query(model).filter(model.id.in_(ids)).delete(
+                synchronize_session=False
+            )
+            db.commit()
+            deleted[key] += len(ids)
+            if len(ids) < _PRUNE_BATCH:
+                break
+
+    total = sum(deleted.values())
+    if total:
+        logger.info("Data retention prune: %s", deleted)
+    return deleted
 
 
 def get_events(db: Session, limit: int = 50) -> list[Event]:

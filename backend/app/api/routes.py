@@ -490,95 +490,143 @@ async def ws_stream(websocket: WebSocket) -> None:
         manager.disconnect(websocket)
 
 
+def _broadcast_tick_db_work(
+    include_snapshot: bool,
+    prune_due: bool,
+    last_event_ts,
+):
+    """Уся синхронна DB-робота одного тіку broadcast-циклу.
+
+    Виконується у worker-потоці (asyncio.to_thread), щоб НЕ блокувати
+    event loop: щогодинний прюнінг чи TTL-reset можуть тривати секунди,
+    і якби вони йшли прямо в async-циклі — усі WebSocket-розсилки та
+    async-хендлери завмирали б на цей час.
+
+    Сесія створюється й закривається В МЕЖАХ потоку (SQLAlchemy Session
+    не thread-safe). Повертає лише plain-словники, готові до broadcast.
+    """
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        # Серверне автозавершення доставок — ЗАВЖДИ, навіть без клієнтів.
+        orchestrator.auto_complete_due_assignments(db)
+        # TTL сценаріїв: «завислий» понад 10 хв блекаут → авто-RESET,
+        # навіть без жодного відкритого клієнта і без симулятора.
+        orchestrator.get_active_scenario(db)
+        # Щогодинна ретенція: тримає SQLite на плато (~1 доба даних)
+        # замість безмежного росту, який за 2 доби клав сервіс.
+        if prune_due:
+            orchestrator.prune_old_data(db)
+
+        if not include_snapshot:
+            return None, [], last_event_ts
+
+        summary = orchestrator.get_dashboard_summary(db)
+        objects_state = orchestrator.get_objects_with_state(db)
+        active_assignments = orchestrator.get_active_assignments(db)
+        snapshot = {
+            "type": "snapshot",
+            "summary": summary,
+            "assignments": [
+                _assignment_event_payload(a) for a in active_assignments
+            ],
+            "objects": [
+                {
+                    "id": str(row["object"].id),
+                    "name": row["object"].name,
+                    "status": row["score"].status.value
+                    if row["score"]
+                    else "STABLE",
+                    "score": row["score"].score if row["score"] else None,
+                    "battery_pct": row["telemetry"].battery_pct
+                    if row["telemetry"]
+                    else None,
+                    "power_on": row["telemetry"].power_on
+                    if row["telemetry"]
+                    else None,
+                    "occupancy": row["telemetry"].occupancy
+                    if row["telemetry"]
+                    else 0,
+                    "ts": (
+                        _to_utc_iso(row["telemetry"].ts)
+                        if row["telemetry"]
+                        else None
+                    ),
+                }
+                for row in objects_state
+            ],
+        }
+
+        # Нові події з моменту останнього broadcast (за ts)
+        event_payloads: list[dict] = []
+        recent_events = orchestrator.get_events(db, limit=20)
+        new_events = [ev for ev in recent_events if ev.ts > last_event_ts]
+        if new_events:
+            last_event_ts = max(ev.ts for ev in new_events)
+            # reversed → від найстарішої до найновішої
+            for ev in reversed(new_events):
+                event_payloads.append(
+                    {
+                        "type": "event",
+                        "event": {
+                            "id": str(ev.id),
+                            "ts": _to_utc_iso(ev.ts),
+                            "object_id": str(ev.object_id)
+                            if ev.object_id
+                            else None,
+                            "scenario_id": str(ev.scenario_id)
+                            if ev.scenario_id
+                            else None,
+                            "type": ev.type.value,
+                            "message": ev.message,
+                            "severity": ev.severity.value,
+                        },
+                    }
+                )
+        return snapshot, event_payloads, last_event_ts
+    finally:
+        db.close()
+
+
 async def broadcast_event_loop() -> AsyncGenerator[None, None]:
     """Фоново шле клієнтам snapshot стану системи кожні 3 секунди.
     Паралельно пушить нові події (type=event) для оперативного журналу.
+    Уся DB-робота — у worker-потоці, event loop лише розсилає.
     """
     from datetime import datetime, timezone
-
-    from app.core.database import SessionLocal
 
     # Пушимо лише події, що виникли ПІСЛЯ старту loop → оперативний журнал
     # у клієнта починається порожнім, а не з бэклогу. Відстежуємо за ts
     # (а не за UUID — uuid4 не впорядкований, тож рядкове порівняння id
     # пропускало/дублювало події). SQLite зберігає naive-UTC.
     last_event_ts = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Ретенція БД: перший прюнінг — одразу після старту (прибирає бэклог,
+    # якщо сервіс довго лежав), далі — раз на годину.
+    last_prune_monotonic = float("-inf")
     while True:
         await asyncio.sleep(3)
-        db = SessionLocal()
         try:
-            # Серверне автозавершення доставок — виконуємо ЗАВЖДИ, навіть коли
-            # немає жодного активного WS-клієнта. Інакше доставки «зависали» б
-            # у статусі RESCUE_IN_TRANSIT, поки хтось не відкриє вкладку.
-            orchestrator.auto_complete_due_assignments(db)
-            # Далі — лише якщо є кому слати snapshot (економимо CPU).
-            if not manager.active:
-                continue
-            summary = orchestrator.get_dashboard_summary(db)
-            objects_state = orchestrator.get_objects_with_state(db)
-            active_assignments = orchestrator.get_active_assignments(db)
-            snapshot = {
-                "type": "snapshot",
-                "summary": summary,
-                "assignments": [
-                    _assignment_event_payload(a) for a in active_assignments
-                ],
-                "objects": [
-                    {
-                        "id": str(row["object"].id),
-                        "name": row["object"].name,
-                        "status": row["score"].status.value
-                        if row["score"]
-                        else "STABLE",
-                        "score": row["score"].score if row["score"] else None,
-                        "battery_pct": row["telemetry"].battery_pct
-                        if row["telemetry"]
-                        else None,
-                        "power_on": row["telemetry"].power_on
-                        if row["telemetry"]
-                        else None,
-                        "occupancy": row["telemetry"].occupancy
-                        if row["telemetry"]
-                        else 0,
-                        "ts": (
-                            _to_utc_iso(row["telemetry"].ts)
-                            if row["telemetry"]
-                            else None
-                        ),
-                    }
-                    for row in objects_state
-                ],
-            }
-            await manager.broadcast(snapshot)
+            now_monotonic = asyncio.get_event_loop().time()
+            prune_due = now_monotonic - last_prune_monotonic >= 3600
+            if prune_due:
+                last_prune_monotonic = now_monotonic
 
-            # Push нових подій з моменту останнього broadcast (за ts)
-            recent_events = orchestrator.get_events(db, limit=20)
-            if recent_events:
-                new_events = [ev for ev in recent_events if ev.ts > last_event_ts]
-                if new_events:
-                    last_event_ts = max(ev.ts for ev in new_events)
-                    # reversed → від найстарішої до найновішої
-                    for ev in reversed(new_events):
-                        await manager.broadcast(
-                            {
-                                "type": "event",
-                                "event": {
-                                    "id": str(ev.id),
-                                    "ts": _to_utc_iso(ev.ts),
-                                    "object_id": str(ev.object_id)
-                                    if ev.object_id
-                                    else None,
-                                    "scenario_id": str(ev.scenario_id)
-                                    if ev.scenario_id
-                                    else None,
-                                    "type": ev.type.value,
-                                    "message": ev.message,
-                                    "severity": ev.severity.value,
-                                },
-                            }
-                        )
-        finally:
-            db.close()
+            snapshot, event_payloads, last_event_ts = await asyncio.to_thread(
+                _broadcast_tick_db_work,
+                bool(manager.active),
+                prune_due,
+                last_event_ts,
+            )
+
+            if snapshot is not None:
+                await manager.broadcast(snapshot)
+            for payload in event_payloads:
+                await manager.broadcast(payload)
+        except Exception:  # noqa: BLE001 — цикл не має вмирати від разової помилки
+            import logging
+
+            logging.getLogger(__name__).exception("broadcast tick failed")
 
 
 router.include_router(public_router)

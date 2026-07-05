@@ -51,17 +51,27 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Час останнього повідомлення від сервера. Сервер шле snapshot кожні
+    // ~3с, тож тиша довша за 20с = «зомбі»-з'єднання (ноутбук спав, мобільна
+    // вкладка у фоні) — браузер НЕ кидає onclose у таких випадках, і без
+    // watchdog сторінка назавжди застигала зі старими даними.
+    let lastMessageAt = Date.now();
+
     function connectWs() {
       const ws = new WebSocket(wsUrl("/api/ws/stream"));
       wsRef.current = ws;
 
-      ws.onopen = () => setWsConnected(true);
+      ws.onopen = () => {
+        lastMessageAt = Date.now();
+        setWsConnected(true);
+      };
       ws.onclose = () => {
         setWsConnected(false);
         reconnectTimer = setTimeout(connectWs, 2000);
       };
       ws.onerror = () => ws.close();
       ws.onmessage = async (ev) => {
+        lastMessageAt = Date.now();
         try {
           const msg = JSON.parse(ev.data as string);
           if (msg.type === "snapshot") {
@@ -121,9 +131,32 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     bootstrap().then(connectWs);
 
+    // Watchdog: якщо від сервера >20с тиші при "відкритому" сокеті —
+    // з'єднання зомбі. Закриваємо примусово → onclose → реконект.
+    const watchdog = setInterval(() => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN && Date.now() - lastMessageAt > 20000) {
+        ws.close();
+      }
+    }, 5000);
+
+    // Повернення на вкладку (розбудили ноутбук, розгорнули браузер):
+    // одразу перетягуємо свіжий стан і перевіряємо живість сокета.
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      bootstrap();
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN && Date.now() - lastMessageAt > 10000) {
+        ws.close();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       cancelled = true;
       clearTimeout(reconnectTimer);
+      clearInterval(watchdog);
+      document.removeEventListener("visibilitychange", onVisible);
       wsRef.current?.close();
     };
   }, []);
