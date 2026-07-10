@@ -56,6 +56,14 @@ INTERVAL_SEC = int(os.getenv("INTERVAL_SEC", "5"))
 # 60 → за хвилину демо проходить година «життя» об'єкта.
 SIM_SPEEDUP = float(os.getenv("SIM_SPEEDUP", "60"))
 
+# Об'єкти, які симулятор НЕ чіпає (кома-розділений список object_id).
+# Потрібно для живого демо: реальний ESP32-вузол сам шле телеметрію свого
+# об'єкта, і без цього виключення симулятор перезаписував би його стан
+# кожні кілька секунд (мигання «є світло / нема»).
+EXCLUDE_OBJECT_IDS = {
+    x.strip() for x in os.getenv("EXCLUDE_OBJECT_IDS", "").split(",") if x.strip()
+}
+
 # Базове навантаження (Вт) за типом об'єкта + споживання на людину.
 # Ті самі значення, що й на бекенді (orchestrator._BASE_LOAD_W).
 BASE_LOAD_W = {
@@ -189,6 +197,9 @@ def init_states(objects: list[dict]) -> None:
     global states
     states = []
     for o in objects:
+        if o["id"] in EXCLUDE_OBJECT_IDS:
+            log(f"⏭  Пропускаю {o['name']} — керується реальним залізом", "warn")
+            continue
         states.append(
             SimState(
                 object_id=o["id"],

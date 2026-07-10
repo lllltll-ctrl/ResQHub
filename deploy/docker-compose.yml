@@ -74,6 +74,10 @@ services:
       context: ../simulator
     environment:
       BACKEND_URL: "http://backend:8000"
+      # Живе демо: перелічи object_id, якими керує реальне залізо (ESP32),
+      # щоб симулятор їх НЕ чіпав. Напр.:
+      #   EXCLUDE_OBJECT_IDS=a7014620-... docker compose up -d
+      EXCLUDE_OBJECT_IDS: "${EXCLUDE_OBJECT_IDS:-}"
     depends_on:
       - backend
     restart: unless-stopped
