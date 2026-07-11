@@ -39,6 +39,12 @@ const char* OBJECT_ID = "a7014620-8a24-4883-8706-95656bcbe62e";
 const int PIN_ACS712 = 33;   // ADC1 — сигнал ACS712 OUT (працює з увімкненим WiFi)
 const int PIN_RELAY  = 26;   // керування лампою (HIGH = увімкнено)
 const bool RELAY_ACTIVE_HIGH = true;  // деякі модулі інвертовані — переключи, якщо навпаки
+const int PIN_BUTTON = 0;    // BOOT-кнопка на платі: тригер блекауту (тисни → гасне)
+
+// Джерело сигналу «є живлення»:
+//   false = за станом реле (НАДІЙНО, працює з будь-якою лампою; блекаут = кнопка)
+//   true  = за струмом ACS712 (потрібне навантаження ≥0.2A, напр. лампа розжарювання)
+const bool USE_CURRENT_SENSOR = false;
 
 // ─────────────── ACS712 ───────────────
 // Чутливість (В на Ампер): 5A=0.185, 20A=0.100, 30A=0.066. У тебе 5A.
@@ -57,6 +63,19 @@ const unsigned long CYCLE_MS = 3000;   // період телеметрії
 
 // ─────────────── Стан ───────────────
 float batteryPct = 100.0f;
+bool  relayOn = true;        // реле замкнене = лампа світить = живлення «є»
+
+// Кнопка BOOT: натиск перемикає реле (блекаут ↔ відновлення). Active-low.
+void handleButton() {
+  static bool prev = HIGH;
+  bool now = digitalRead(PIN_BUTTON);
+  if (prev == HIGH && now == LOW) {
+    relayOn = !relayOn;
+    Serial.printf(">>> %s\n", relayOn ? "ВІДНОВЛЕННЯ" : "БЛЕКАУТ (кнопка)");
+    delay(180);              // антидребезг
+  }
+  prev = now;
+}
 
 // Читає AC-RMS струм з ACS712 за ~200мс (авто-центрування біля середнього).
 float readCurrentA() {
@@ -129,6 +148,7 @@ void setup() {
   Serial.begin(115200);
   delay(300);
   pinMode(PIN_RELAY, OUTPUT);
+  pinMode(PIN_BUTTON, INPUT_PULLUP);
   setRelay(true);                        // лампа увімкнена (живлення «є»)
   analogReadResolution(12);              // 0..4095
   analogSetPinAttenuation(PIN_ACS712, ADC_11db);  // діапазон ~0..3.3В
@@ -136,18 +156,24 @@ void setup() {
 }
 
 void loop() {
-  unsigned long t0 = millis();
+  handleButton();
+  setRelay(relayOn);                     // реле слідує за станом (кнопка керує)
 
-  float amps = readCurrentA();
-  bool powerOn = amps > CURRENT_THRESHOLD_A;
+  float amps = readCurrentA();           // читаємо струм (для «реального датчика»)
+  bool powerOn = USE_CURRENT_SENSOR ? (amps > CURRENT_THRESHOLD_A) : relayOn;
 
-  // Демо-батарея: нема струму → розряд, є струм → заряд.
+  // Демо-батарея: нема живлення → розряд, є → заряд.
   if (powerOn) batteryPct = min(100.0f, batteryPct + CHARGE_PER_CYCLE);
   else         batteryPct = max(0.0f,   batteryPct - DRAIN_PER_CYCLE);
 
-  Serial.printf("I=%.3fA  ", amps);
+  Serial.printf("relay=%d I=%.3fA  ", relayOn, amps);
   postTelemetry(powerOn, batteryPct);
 
-  unsigned long dt = millis() - t0;
-  if (dt < CYCLE_MS) delay(CYCLE_MS - dt);
+  // Чекаємо до наступного циклу, АЛЕ кнопку опитуємо часто (реакція миттєва).
+  unsigned long t0 = millis();
+  while (millis() - t0 < CYCLE_MS) {
+    handleButton();
+    setRelay(relayOn);
+    delay(10);
+  }
 }
