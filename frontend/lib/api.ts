@@ -47,6 +47,9 @@ export const api = {
       `/api/counterfactual/${object_id}?intervention=${intervention}&eta_min=${eta_min}`,
     ),
 
+  copilot: (question: string) =>
+    postJson<{ answer: string; configured: boolean }>("/api/copilot", { question }),
+
   assignments: () => getJson<Assignment[]>("/api/assignments"),
   createAssignment: (object_id: string, resource_type: string, eta_min = 30) =>
     postJson<Assignment>("/api/assignments", { object_id, resource_type, eta_min }),

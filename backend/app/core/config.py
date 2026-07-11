@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     simulator_interval_sec: int = 5
     simulator_backend_url: str = "http://localhost:8000"
 
+    # AI-копілот (Gemini). Безкоштовний ключ: ai.google.dev. Порожній = вимкнено.
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [

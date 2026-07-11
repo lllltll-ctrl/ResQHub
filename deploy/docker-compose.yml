@@ -25,6 +25,9 @@ services:
     environment:
       DATABASE_URL: "sqlite:////data/resqhub.db"
       CORS_ORIGINS: "https://resqhub.systems,http://resqhub.systems,http://64.226.67.86,http://localhost:3000"
+      # AI-копілот. Ключ береться з host-env / .env поруч із compose (не в коді).
+      # Локально: створи deploy/.env з рядком  GEMINI_API_KEY=твій_ключ
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
     volumes:
       - dbdata:/data
     expose:

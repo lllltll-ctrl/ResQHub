@@ -46,6 +46,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -247,6 +248,19 @@ def dashboard_full(db: Session = Depends(get_db)):
 @router.get("/routing", response_model=list[RoutingRecommendation])
 def routing(db: Session = Depends(get_db), limit: int = 5):
     return orchestrator.get_routing_recommendations(db, limit=limit)
+
+
+# ---------- AI-копілот ----------
+class CopilotAsk(BaseModel):
+    question: str
+
+
+@router.post("/copilot")
+def copilot(payload: CopilotAsk, db: Session = Depends(get_db)):
+    """AI-помічник диспетчера: відповідає на живому стані міста (Gemini)."""
+    from app.services import copilot as copilot_service
+
+    return copilot_service.answer(db, payload.question)
 
 
 # ---------- Counterfactual (What-if) ----------

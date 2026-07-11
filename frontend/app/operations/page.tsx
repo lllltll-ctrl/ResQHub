@@ -19,6 +19,7 @@ import type {
   ResourceTypeT,
 } from "@/lib/types";
 import { MobileNav } from "@/components/MobileNav";
+import { CopilotPanel } from "@/components/CopilotPanel";
 import { buildOperatorBrief } from "@/lib/recommendations";
 
 // ── Парк техніки та логістика ────────────────────────────────────────
@@ -263,6 +264,7 @@ export default function OperationsPage() {
   return (
     <RealtimeProvider>
       <OperationsShell />
+      <CopilotPanel />
       <ToastContainer />
     </RealtimeProvider>
   );
