@@ -31,7 +31,7 @@ tar czf - \
   --exclude='*.db' --exclude='*.db-shm' --exclude='*.db-wal' --exclude='*.db-journal' \
   --exclude='*.joblib' \
   --exclude='*.jpeg' \
-  . | ssh "$DROPLET" "rm -rf /opt/orbit && mkdir -p /opt/orbit && tar xzf - -C /opt/orbit"
+  . | ssh "$DROPLET" "cp -f /opt/orbit/deploy/.env /tmp/orbit.env 2>/dev/null; rm -rf /opt/orbit && mkdir -p /opt/orbit && tar xzf - -C /opt/orbit && cp -f /tmp/orbit.env /opt/orbit/deploy/.env 2>/dev/null || true"
 
 echo "→ Перебудовую і перезапускаю контейнери…"
 ssh "$DROPLET" "cd /opt/orbit/deploy && docker compose up -d --build ${SERVICE}"
